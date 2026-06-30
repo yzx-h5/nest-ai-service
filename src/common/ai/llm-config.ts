@@ -3,6 +3,21 @@ import { ConfigService } from '@nestjs/config';
 interface OpenAiClientConfig {
   baseURL?: string;
   apiKey?: string;
+  defaultHeaders?: Record<string, string>;
+}
+
+function normalizeEmbeddingBaseUrl(
+  baseUrl: string | undefined,
+): string | undefined {
+  if (!baseUrl) {
+    return baseUrl;
+  }
+
+  return baseUrl.replace(/\/embeddings\/?$/, '');
+}
+
+function isTruthyEnv(value: string | undefined): boolean {
+  return value === 'true' || value === '1';
 }
 
 export function getLlmApiKey(configService: ConfigService): string | undefined {
@@ -27,10 +42,23 @@ export function getEmbeddingApiKey(
 export function getEmbeddingBaseUrl(
   configService: ConfigService,
 ): string | undefined {
-  return (
+  const baseUrl =
     configService.get<string>('EMBEDDING_BASE_URL') ??
-    configService.get<string>('OPENAI_BASE_URL')
-  );
+    configService.get<string>('OPENAI_BASE_URL');
+
+  return normalizeEmbeddingBaseUrl(baseUrl);
+}
+
+export function getEmbeddingDefaultHeaders(
+  configService: ConfigService,
+): Record<string, string> | undefined {
+  if (!isTruthyEnv(configService.get<string>('EMBEDDING_FAILOVER_ENABLED'))) {
+    return undefined;
+  }
+
+  return {
+    'X-Failover-Enabled': 'true',
+  };
 }
 
 export function buildOpenAiClientConfig(
@@ -45,9 +73,14 @@ export function buildOpenAiClientConfig(
     target === 'embedding'
       ? getEmbeddingBaseUrl(configService)
       : getLlmBaseUrl(configService);
+  const defaultHeaders =
+    target === 'embedding'
+      ? getEmbeddingDefaultHeaders(configService)
+      : undefined;
 
   return {
     baseURL,
     apiKey,
+    ...(defaultHeaders ? { defaultHeaders } : {}),
   };
 }

@@ -67,18 +67,15 @@ export class KnowledgeService {
   }
 
   private async initialize(): Promise<void> {
-    const qdrantUrl = this.configService.get<string>(
-      'QDRANT_URL',
-      'http://localhost:6333',
-    );
+    const qdrantUrl = this.configService.getOrThrow<string>('QDRANT_URL');
 
     const embeddings = new OpenAIEmbeddings({
-      model: this.configService.get<string>(
-        'OPENAI_EMBEDDING_MODEL',
-        'deepseek-embedding-v2',
-      ),
+      model: this.configService.getOrThrow<string>('OPENAI_EMBEDDING_MODEL'),
       apiKey: getEmbeddingApiKey(this.configService),
       configuration: buildOpenAiClientConfig(this.configService, 'embedding'),
+      batchSize: Number(
+        this.configService.get<string>('EMBEDDING_BATCH_SIZE', '25'),
+      ),
     });
 
     this.textSplitter = new RecursiveCharacterTextSplitter({
