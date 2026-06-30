@@ -6,6 +6,7 @@ import {
   SystemMessage,
 } from '@langchain/core/messages';
 import { ChatOpenAI } from '@langchain/openai';
+import { buildOpenAiClientConfig } from '../common/ai/llm-config';
 
 @Injectable()
 export class LangchainService implements OnModuleInit {
@@ -15,9 +16,15 @@ export class LangchainService implements OnModuleInit {
 
   onModuleInit() {
     this.model = new ChatOpenAI({
-      model: this.configService.get<string>('OPENAI_MODEL', 'gpt-4o-mini'),
+      model: this.configService.get<string>(
+        'OPENAI_MODEL',
+        'deepseek-v4-flash',
+      ),
       apiKey: this.configService.get<string>('OPENAI_API_KEY'),
-      temperature: this.configService.get<number>('OPENAI_TEMPERATURE', 0.7),
+      configuration: buildOpenAiClientConfig(this.configService, 'llm'),
+      temperature: Number(
+        this.configService.get<string>('OPENAI_TEMPERATURE', '0.7'),
+      ),
     });
   }
 

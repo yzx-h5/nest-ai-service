@@ -11,7 +11,7 @@ export class LangchainController {
   constructor(private readonly langchainService: LangchainService) {}
 
   @Post('chat')
-  @ApiOperation({ summary: '调用 OpenAI 进行对话' })
+  @ApiOperation({ summary: '调用 LLM 进行对话' })
   @ApiOkResponseWrapped(ChatResponseDto, '对话成功')
   async chat(@Body() body: ChatDto): Promise<ChatResponseDto> {
     const content = await this.langchainService.invoke(

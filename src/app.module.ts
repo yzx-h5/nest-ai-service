@@ -7,6 +7,7 @@ import { MetricsModule } from './common/metrics/metrics.module';
 import { ResponseModule } from './common/response/response.module';
 import { ValidationModule } from './common/validation/validation.module';
 import { LangchainModule } from './langchain/langchain.module';
+import { KnowledgeModule } from './knowledge/knowledge.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { LangchainModule } from './langchain/langchain.module';
     ResponseModule,
     ValidationModule,
     LangchainModule,
+    KnowledgeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
