@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Post,
@@ -7,26 +6,30 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ApiOkResponseWrapped } from '../common/response/api-response.dto';
-import { DocumentParserService } from './document-parser.service';
+import { API_KEY_SECURITY_NAME } from '../common/security/security.constants';
 import { ImportTextDto } from './dto/import-text.dto';
 import {
   ImportDocumentResponseDto,
   QueryKnowledgeResponseDto,
 } from './dto/knowledge-response.dto';
 import { QueryKnowledgeDto } from './dto/query.dto';
+import { MAX_UPLOAD_BYTES } from './dto/upload-document.schema';
+import { UploadDocumentDto } from './dto/upload-document.dto';
 import { KnowledgeService } from './knowledge.service';
 
-const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
-
 @ApiTags('AI Knowledge')
+@ApiSecurity(API_KEY_SECURITY_NAME)
 @Controller('ai/knowledge')
 export class KnowledgeController {
-  constructor(
-    private readonly knowledgeService: KnowledgeService,
-    private readonly documentParserService: DocumentParserService,
-  ) {}
+  constructor(private readonly knowledgeService: KnowledgeService) {}
 
   @Post('documents/text')
   @ApiOperation({ summary: '导入文本到知识库' })
@@ -64,18 +67,8 @@ export class KnowledgeController {
     FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES } }),
   )
   async uploadDocument(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: UploadDocumentDto,
   ): Promise<ImportDocumentResponseDto> {
-    if (!file) {
-      throw new BadRequestException('请上传 file 字段对应的文件');
-    }
-
-    if (!this.documentParserService.isSupported(file.originalname)) {
-      throw new BadRequestException(
-        this.documentParserService.getSupportedFormatsMessage(),
-      );
-    }
-
     return this.knowledgeService.importFile(file.buffer, file.originalname);
   }
 

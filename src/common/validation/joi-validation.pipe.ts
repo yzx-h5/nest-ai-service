@@ -8,6 +8,35 @@ import { Reflector } from '@nestjs/core';
 import type { ObjectSchema } from './joi';
 import { JOI_SCHEMA_KEY } from './joi-schema.decorator';
 
+const JOI_VALIDATE_OPTIONS = {
+  abortEarly: false,
+  stripUnknown: true,
+  convert: true,
+} as const;
+
+function sanitizeValue(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value.trim().replace(/\0/g, '');
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeValue(item));
+  }
+
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    !Buffer.isBuffer(value) &&
+    !(value instanceof Date)
+  ) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, sanitizeValue(entry)]),
+    );
+  }
+
+  return value;
+}
+
 @Injectable()
 export class JoiValidationPipe implements PipeTransform {
   constructor(private readonly reflector: Reflector) {}
@@ -30,10 +59,7 @@ export class JoiValidationPipe implements PipeTransform {
       return value;
     }
 
-    const result = schema.validate(value, {
-      abortEarly: false,
-      stripUnknown: true,
-    });
+    const result = schema.validate(value, JOI_VALIDATE_OPTIONS);
 
     if (result.error) {
       throw new UnprocessableEntityException(
@@ -41,10 +67,10 @@ export class JoiValidationPipe implements PipeTransform {
       );
     }
 
-    return result.value;
+    return sanitizeValue(result.value);
   }
 
   private shouldValidate(metadata: ArgumentMetadata): boolean {
-    return ['body', 'query', 'param'].includes(metadata.type ?? '');
+    return ['body', 'query', 'param', 'custom'].includes(metadata.type ?? '');
   }
 }

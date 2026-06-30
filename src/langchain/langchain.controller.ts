@@ -1,11 +1,13 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { ApiOkResponseWrapped } from '../common/response/api-response.dto';
+import { API_KEY_SECURITY_NAME } from '../common/security/security.constants';
 import { ChatDto } from './dto/chat.dto';
 import { ChatResponseDto } from './dto/chat-response.dto';
 import { LangchainService } from './langchain.service';
 
 @ApiTags('AI')
+@ApiSecurity(API_KEY_SECURITY_NAME)
 @Controller('ai')
 export class LangchainController {
   constructor(private readonly langchainService: LangchainService) {}

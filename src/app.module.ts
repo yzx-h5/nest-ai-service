@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { LoggerModule } from './common/logger/logger.module';
 import { MetricsModule } from './common/metrics/metrics.module';
 import { ResponseModule } from './common/response/response.module';
+import { SecurityModule } from './common/security/security.module';
 import { ValidationModule } from './common/validation/validation.module';
 import { LangchainModule } from './langchain/langchain.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
@@ -15,6 +16,7 @@ import { KnowledgeModule } from './knowledge/knowledge.module';
     LoggerModule,
     MetricsModule,
     ResponseModule,
+    SecurityModule,
     ValidationModule,
     LangchainModule,
     KnowledgeModule,
