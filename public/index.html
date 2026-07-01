@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nest AI Service Demo</title>
+    <style>
+      :root {
+        --bg: #0f1419;
+        --surface: #1a2332;
+        --surface2: #243044;
+        --border: #2d3f56;
+        --text: #e7ecf3;
+        --muted: #8b9cb3;
+        --accent: #3b82f6;
+        --accent-hover: #2563eb;
+        --success: #22c55e;
+        --danger: #ef4444;
+        --warning: #f59e0b;
+        --step: #a78bfa;
+        --radius: 10px;
+        --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+      }
+
+      header {
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+        padding: 16px 24px;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+
+      header h1 {
+        margin: 0 0 12px;
+        font-size: 1.25rem;
+        font-weight: 600;
+      }
+
+      .config {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 12px;
+        align-items: end;
+      }
+
+      @media (max-width: 720px) {
+        .config {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      label {
+        display: block;
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+
+      input,
+      textarea,
+      select {
+        width: 100%;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font: inherit;
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 88px;
+        font-family: var(--mono);
+        font-size: 0.9rem;
+        line-height: 1.5;
+      }
+
+      button {
+        font: inherit;
+        cursor: pointer;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 500;
+        transition: background 0.15s;
+      }
+
+      button:hover:not(:disabled) {
+        background: var(--accent-hover);
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      button.secondary {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+      }
+
+      button.danger {
+        background: var(--danger);
+      }
+
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 20px 24px 48px;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+
+      .tabs button {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+
+      .tabs button.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      .panel {
+        display: none;
+      }
+
+      .panel.active {
+        display: block;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+
+      .card h2 {
+        margin: 0 0 16px;
+        font-size: 1rem;
+      }
+
+      .row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+
+      .row label.inline {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text);
+        font-size: 0.9rem;
+        margin: 0;
+      }
+
+      .output {
+        background: #0a0e14;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px;
+        min-height: 160px;
+        max-height: 420px;
+        overflow: auto;
+        font-family: var(--mono);
+        font-size: 0.88rem;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .steps {
+        margin-bottom: 10px;
+        padding-bottom: 10px;
+        border-bottom: 1px dashed var(--border);
+      }
+
+      .step-item {
+        font-size: 0.82rem;
+        color: var(--step);
+        margin: 4px 0;
+      }
+
+      .answer-text {
+        color: var(--text);
+      }
+
+      .status {
+        font-size: 0.85rem;
+        margin-top: 8px;
+        color: var(--muted);
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .status.ok {
+        color: var(--success);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 500;
+      }
+
+      td.content-cell {
+        max-width: 320px;
+        word-break: break-word;
+      }
+
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        background: var(--surface2);
+        color: var(--muted);
+      }
+
+      .pagination {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 12px;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .file-input-wrap input[type='file'] {
+        padding: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Nest AI Service · API 调试台</h1>
+      <div class="config">
+        <div>
+          <label for="baseUrl">API 地址</label>
+          <input id="baseUrl" type="url" value="http://localhost:3000" />
+        </div>
+        <div>
+          <label for="apiKey">x-api-key</label>
+          <input id="apiKey" type="password" placeholder="与 .env 中 API_KEYS 一致" />
+        </div>
+        <button type="button" id="saveConfig" class="secondary">保存配置</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="tabs">
+        <button type="button" class="tab active" data-tab="chat">AI 对话</button>
+        <button type="button" class="tab" data-tab="knowledge">知识库问答</button>
+        <button type="button" class="tab" data-tab="docs">文档管理</button>
+      </div>
+
+      <!-- AI Chat -->
+      <section id="panel-chat" class="panel active">
+        <div class="card">
+          <h2>POST /ai/chat</h2>
+          <div class="row">
+            <label class="inline">
+              <input type="checkbox" id="chatStream" checked />
+              流式输出 (stream)
+            </label>
+          </div>
+          <label for="chatSystem">系统提示词（可选）</label>
+          <textarea id="chatSystem" placeholder="你是一个简洁的技术助手"></textarea>
+          <label for="chatPrompt" style="margin-top: 12px">用户输入</label>
+          <textarea id="chatPrompt" placeholder="用一句话介绍 NestJS"></textarea>
+          <div class="row" style="margin-top: 12px">
+            <button type="button" id="chatSend">发送</button>
+            <button type="button" id="chatClear" class="secondary">清空输出</button>
+          </div>
+          <div class="output" id="chatOutput"></div>
+          <div class="status" id="chatStatus"></div>
+        </div>
+      </section>
+
+      <!-- Knowledge Query -->
+      <section id="panel-knowledge" class="panel">
+        <div class="card">
+          <h2>POST /ai/knowledge/query</h2>
+          <div class="row">
+            <label class="inline">
+              <input type="checkbox" id="queryStream" checked />
+              流式输出 (stream)
+            </label>
+          </div>
+          <label for="queryQuestion">问题</label>
+          <textarea id="queryQuestion" placeholder="NestJS 是什么？"></textarea>
+          <div class="row" style="margin-top: 12px">
+            <button type="button" id="querySend">提问</button>
+            <button type="button" id="queryClear" class="secondary">清空输出</button>
+          </div>
+          <div class="output" id="queryOutput"></div>
+          <div class="status" id="queryStatus"></div>
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section id="panel-docs" class="panel">
+        <div class="card">
+          <h2>上传文件 · POST /ai/knowledge/documents/upload</h2>
+          <div class="file-input-wrap row">
+            <input type="file" id="uploadFile" accept=".txt,.md,.pdf,.docx,.xlsx,.xls" />
+            <button type="button" id="uploadBtn">上传</button>
+          </div>
+          <div class="status" id="uploadStatus"></div>
+        </div>
+
+        <div class="card">
+          <h2>导入文本 · POST /ai/knowledge/documents/text</h2>
+          <label for="importSource">来源标识（可选）</label>
+          <input id="importSource" type="text" placeholder="my-notes.txt" />
+          <label for="importText" style="margin-top: 12px">文本内容</label>
+          <textarea id="importText" placeholder="要导入知识库的文本..."></textarea>
+          <div class="row" style="margin-top: 12px">
+            <button type="button" id="importBtn">导入</button>
+          </div>
+          <div class="status" id="importStatus"></div>
+        </div>
+
+        <div class="card">
+          <h2>文档列表 · GET /ai/knowledge/documents</h2>
+          <div class="row">
+            <div style="flex: 1; min-width: 160px">
+              <label for="listSource">按 source 过滤（可选）</label>
+              <input id="listSource" type="text" placeholder="文件名或来源" />
+            </div>
+            <div style="width: 100px">
+              <label for="listPageSize">每页</label>
+              <select id="listPageSize">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+              </select>
+            </div>
+            <button type="button" id="listBtn" style="align-self: end">刷新列表</button>
+          </div>
+          <div style="overflow-x: auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>来源</th>
+                  <th>类型</th>
+                  <th>导入时间</th>
+                  <th>内容摘要</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="docTableBody">
+                <tr>
+                  <td colspan="6" style="color: var(--muted)">点击「刷新列表」加载</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination">
+            <button type="button" id="prevPage" class="secondary" disabled>上一页</button>
+            <span id="pageInfo" class="badge">第 1 页</span>
+            <button type="button" id="nextPage" class="secondary" disabled>下一页</button>
+          </div>
+          <div class="status" id="listStatus"></div>
+        </div>
+
+        <div class="card">
+          <h2>按 source 删除 · DELETE /ai/knowledge/documents?source=</h2>
+          <div class="row">
+            <input id="deleteSource" type="text" placeholder="要删除的文档来源标识" style="flex: 1" />
+            <button type="button" id="deleteSourceBtn" class="danger">删除该文档全部切片</button>
+          </div>
+          <div class="status" id="deleteSourceStatus"></div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const STORAGE_KEY = 'nest-ai-demo-config';
+      let listPage = 1;
+      let listTotalPages = 1;
+      let abortController = null;
+
+      function loadConfig() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+          if (saved.baseUrl) document.getElementById('baseUrl').value = saved.baseUrl;
+          if (saved.apiKey) document.getElementById('apiKey').value = saved.apiKey;
+        } catch (_) {}
+      }
+
+      function saveConfig() {
+        const config = {
+          baseUrl: document.getElementById('baseUrl').value.replace(/\/$/, ''),
+          apiKey: document.getElementById('apiKey').value.trim(),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+        setStatus('chatStatus', '配置已保存', 'ok');
+      }
+
+      function getConfig() {
+        return {
+          baseUrl: document.getElementById('baseUrl').value.replace(/\/$/, ''),
+          apiKey: document.getElementById('apiKey').value.trim(),
+        };
+      }
+
+      function setStatus(id, text, type = '') {
+        const el = document.getElementById(id);
+        el.textContent = text;
+        el.className = 'status' + (type ? ' ' + type : '');
+      }
+
+      function authHeaders(extra = {}) {
+        const { apiKey } = getConfig();
+        const headers = { ...extra };
+        if (apiKey) headers['x-api-key'] = apiKey;
+        return headers;
+      }
+
+      async function apiJson(method, path, body) {
+        const { baseUrl } = getConfig();
+        const options = {
+          method,
+          headers: authHeaders(
+            body !== undefined ? { 'Content-Type': 'application/json' } : {},
+          ),
+        };
+        if (body !== undefined) options.body = JSON.stringify(body);
+
+        const res = await fetch(baseUrl + path, options);
+        const json = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          const msg = json?.message || res.statusText || '请求失败';
+          throw new Error(msg);
+        }
+        if (json && json.code !== 0) {
+          throw new Error(json.message || '业务错误');
+        }
+        return json?.data ?? json;
+      }
+
+      async function apiForm(path, formData) {
+        const { baseUrl } = getConfig();
+        const res = await fetch(baseUrl + path, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: formData,
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || (json && json.code !== 0)) {
+          throw new Error(json?.message || res.statusText || '上传失败');
+        }
+        return json.data;
+      }
+
+      function parseSseChunk(buffer, onEvent) {
+        const lines = buffer.split('\n');
+        const rest = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+          try {
+            onEvent(JSON.parse(raw));
+          } catch (e) {
+            console.warn('SSE parse error', e, raw);
+          }
+        }
+        return rest;
+      }
+
+      async function streamApi(path, body, handlers) {
+        if (abortController) abortController.abort();
+        abortController = new AbortController();
+
+        const { baseUrl } = getConfig();
+        const res = await fetch(baseUrl + path, {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(body),
+          signal: abortController.signal,
+        });
+
+        if (!res.ok) {
+          const json = await res.json().catch(() => null);
+          throw new Error(json?.message || res.statusText || '流式请求失败');
+        }
+
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('text/event-stream')) {
+          const json = await res.json();
+          if (json.code !== 0) throw new Error(json.message);
+          handlers.onResult?.(json.data);
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          buffer = parseSseChunk(buffer, (event) => {
+            if (event.type === 'step') handlers.onStep?.(event);
+            else if (event.type === 'token') handlers.onToken?.(event.content || '');
+            else if (event.type === 'result') handlers.onResult?.(event.data);
+            else if (event.type === 'error') throw new Error(event.message || '流式错误');
+          });
+        }
+
+        if (buffer.trim()) {
+          parseSseChunk(buffer + '\n', (event) => {
+            if (event.type === 'result') handlers.onResult?.(event.data);
+            else if (event.type === 'error') throw new Error(event.message);
+          });
+        }
+      }
+
+      function renderSteps(container, steps) {
+        if (!steps.length) return '';
+        return (
+          '<div class="steps">' +
+          steps.map((s) => `<div class="step-item">▸ ${escapeHtml(s)}</div>`).join('') +
+          '</div>'
+        );
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      // Tabs
+      document.querySelectorAll('.tab').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach((b) => b.classList.remove('active'));
+          document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
+          btn.classList.add('active');
+          document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+        });
+      });
+
+      document.getElementById('saveConfig').addEventListener('click', saveConfig);
+
+      // Chat
+      document.getElementById('chatClear').addEventListener('click', () => {
+        document.getElementById('chatOutput').innerHTML = '';
+        setStatus('chatStatus', '');
+      });
+
+      document.getElementById('chatSend').addEventListener('click', async () => {
+        const prompt = document.getElementById('chatPrompt').value.trim();
+        if (!prompt) return setStatus('chatStatus', '请输入 prompt', 'error');
+
+        const stream = document.getElementById('chatStream').checked;
+        const systemPrompt = document.getElementById('chatSystem').value.trim();
+        const output = document.getElementById('chatOutput');
+        const steps = [];
+        let answer = '';
+
+        output.innerHTML = '';
+        setStatus('chatStatus', '请求中...');
+        document.getElementById('chatSend').disabled = true;
+
+        try {
+          const body = { prompt, stream };
+          if (systemPrompt) body.systemPrompt = systemPrompt;
+
+          if (stream) {
+            await streamApi('/ai/chat', body, {
+              onStep: (e) => {
+                steps.push(e.message || e.step);
+                output.innerHTML =
+                  renderSteps(output, steps) +
+                  '<div class="answer-text">' +
+                  escapeHtml(answer) +
+                  '</div>';
+              },
+              onToken: (token) => {
+                answer += token;
+                output.innerHTML =
+                  renderSteps(output, steps) +
+                  '<div class="answer-text">' +
+                  escapeHtml(answer) +
+                  '</div>';
+                output.scrollTop = output.scrollHeight;
+              },
+              onResult: (data) => {
+                if (data?.content) answer = data.content;
+                output.innerHTML =
+                  renderSteps(output, steps) +
+                  '<div class="answer-text">' +
+                  escapeHtml(answer) +
+                  '</div>';
+              },
+            });
+          } else {
+            const data = await apiJson('POST', '/ai/chat', body);
+            answer = data.content || '';
+            output.innerHTML = '<div class="answer-text">' + escapeHtml(answer) + '</div>';
+          }
+          setStatus('chatStatus', '完成', 'ok');
+        } catch (e) {
+          if (e.name !== 'AbortError') setStatus('chatStatus', e.message, 'error');
+        } finally {
+          document.getElementById('chatSend').disabled = false;
+        }
+      });
+
+      // Knowledge query
+      document.getElementById('queryClear').addEventListener('click', () => {
+        document.getElementById('queryOutput').innerHTML = '';
+        setStatus('queryStatus', '');
+      });
+
+      document.getElementById('querySend').addEventListener('click', async () => {
+        const question = document.getElementById('queryQuestion').value.trim();
+        if (!question) return setStatus('queryStatus', '请输入问题', 'error');
+
+        const stream = document.getElementById('queryStream').checked;
+        const output = document.getElementById('queryOutput');
+        const steps = [];
+        let answer = '';
+        let sources = [];
+
+        output.innerHTML = '';
+        setStatus('queryStatus', '请求中...');
+        document.getElementById('querySend').disabled = true;
+
+        function refreshOutput(extra = '') {
+          let html = renderSteps(output, steps);
+          html += '<div class="answer-text">' + escapeHtml(answer) + '</div>';
+          if (sources.length) {
+            html +=
+              '\n\n<div style="color:var(--muted);font-size:0.8rem;margin-top:12px">参考资料 (' +
+              sources.length +
+              ' 条)</div>';
+            sources.forEach((s, i) => {
+              html +=
+                '<div style="font-size:0.8rem;margin-top:6px;color:var(--muted)">[' +
+                (i + 1) +
+                '] score=' +
+                (s.score?.toFixed(3) ?? '-') +
+                ' · ' +
+                escapeHtml(s.metadata?.source || '未知来源') +
+                '</div>';
+            });
+          }
+          html += extra;
+          output.innerHTML = html;
+          output.scrollTop = output.scrollHeight;
+        }
+
+        try {
+          const body = { question, stream };
+
+          if (stream) {
+            await streamApi('/ai/knowledge/query', body, {
+              onStep: (e) => {
+                steps.push(e.message || e.step);
+                if (e.step === 'retrieved' && e.data?.sources) {
+                  sources = e.data.sources;
+                }
+                refreshOutput();
+              },
+              onToken: (token) => {
+                answer += token;
+                refreshOutput();
+              },
+              onResult: (data) => {
+                answer = data?.answer || answer;
+                sources = data?.sources || sources;
+                refreshOutput();
+              },
+            });
+          } else {
+            const data = await apiJson('POST', '/ai/knowledge/query', body);
+            answer = data.answer || '';
+            sources = data.sources || [];
+            refreshOutput();
+          }
+          setStatus('queryStatus', '完成', 'ok');
+        } catch (e) {
+          if (e.name !== 'AbortError') setStatus('queryStatus', e.message, 'error');
+        } finally {
+          document.getElementById('querySend').disabled = false;
+        }
+      });
+
+      // Upload
+      document.getElementById('uploadBtn').addEventListener('click', async () => {
+        const fileInput = document.getElementById('uploadFile');
+        if (!fileInput.files?.length) return setStatus('uploadStatus', '请选择文件', 'error');
+
+        setStatus('uploadStatus', '上传中...');
+        document.getElementById('uploadBtn').disabled = true;
+        try {
+          const fd = new FormData();
+          fd.append('file', fileInput.files[0]);
+          const data = await apiForm('/ai/knowledge/documents/upload', fd);
+          setStatus(
+            'uploadStatus',
+            `上传成功：${data.chunksAdded} 个切片 · source: ${data.source || '-'}`,
+            'ok',
+          );
+          fileInput.value = '';
+          listPage = 1;
+          loadDocList();
+        } catch (e) {
+          setStatus('uploadStatus', e.message, 'error');
+        } finally {
+          document.getElementById('uploadBtn').disabled = false;
+        }
+      });
+
+      // Import text
+      document.getElementById('importBtn').addEventListener('click', async () => {
+        const text = document.getElementById('importText').value.trim();
+        if (!text) return setStatus('importStatus', '请输入文本', 'error');
+
+        const source = document.getElementById('importSource').value.trim();
+        const body = { text };
+        if (source) body.source = source;
+
+        setStatus('importStatus', '导入中...');
+        try {
+          const data = await apiJson('POST', '/ai/knowledge/documents/text', body);
+          setStatus(
+            'importStatus',
+            `导入成功：${data.chunksAdded} 个切片 · source: ${data.source || '-'}`,
+            'ok',
+          );
+          listPage = 1;
+          loadDocList();
+        } catch (e) {
+          setStatus('importStatus', e.message, 'error');
+        }
+      });
+
+      // List documents
+      async function loadDocList() {
+        const pageSize = Number(document.getElementById('listPageSize').value);
+        const source = document.getElementById('listSource').value.trim();
+        let path = `/ai/knowledge/documents?page=${listPage}&pageSize=${pageSize}`;
+        if (source) path += `&source=${encodeURIComponent(source)}`;
+
+        setStatus('listStatus', '加载中...');
+        const tbody = document.getElementById('docTableBody');
+
+        try {
+          const data = await apiJson('GET', path);
+          listTotalPages = data.totalPages || 1;
+
+          document.getElementById('pageInfo').textContent =
+            `第 ${data.page} / ${listTotalPages} 页 · 共 ${data.total} 条`;
+          document.getElementById('prevPage').disabled = data.page <= 1;
+          document.getElementById('nextPage').disabled = data.page >= listTotalPages;
+
+          if (!data.items?.length) {
+            tbody.innerHTML =
+              '<tr><td colspan="6" style="color:var(--muted)">暂无数据</td></tr>';
+          } else {
+            tbody.innerHTML = data.items
+              .map((item) => {
+                const preview =
+                  item.content.length > 120
+                    ? item.content.slice(0, 120) + '…'
+                    : item.content;
+                return `<tr>
+                  <td><code style="font-size:0.75rem">${escapeHtml(item.id.slice(0, 8))}…</code></td>
+                  <td>${escapeHtml(item.source || '-')}</td>
+                  <td>${escapeHtml(item.fileType || '-')}</td>
+                  <td style="font-size:0.78rem">${escapeHtml(item.importedAt || '-')}</td>
+                  <td class="content-cell">${escapeHtml(preview)}</td>
+                  <td>
+                    <button class="danger" style="padding:6px 10px;font-size:0.8rem" data-id="${escapeHtml(item.id)}">删除</button>
+                  </td>
+                </tr>`;
+              })
+              .join('');
+
+            tbody.querySelectorAll('button[data-id]').forEach((btn) => {
+              btn.addEventListener('click', () => deleteById(btn.dataset.id));
+            });
+          }
+          setStatus('listStatus', '加载完成', 'ok');
+        } catch (e) {
+          tbody.innerHTML =
+            '<tr><td colspan="6" style="color:var(--danger)">加载失败</td></tr>';
+          setStatus('listStatus', e.message, 'error');
+        }
+      }
+
+      async function deleteById(id) {
+        if (!confirm('确定删除该切片？')) return;
+        try {
+          const data = await apiJson('DELETE', `/ai/knowledge/documents/${encodeURIComponent(id)}`);
+          setStatus('listStatus', `已删除 ${data.deletedCount} 条`, 'ok');
+          loadDocList();
+        } catch (e) {
+          setStatus('listStatus', e.message, 'error');
+        }
+      }
+
+      document.getElementById('listBtn').addEventListener('click', () => {
+        listPage = 1;
+        loadDocList();
+      });
+      document.getElementById('prevPage').addEventListener('click', () => {
+        if (listPage > 1) {
+          listPage--;
+          loadDocList();
+        }
+      });
+      document.getElementById('nextPage').addEventListener('click', () => {
+        if (listPage < listTotalPages) {
+          listPage++;
+          loadDocList();
+        }
+      });
+
+      document.getElementById('deleteSourceBtn').addEventListener('click', async () => {
+        const source = document.getElementById('deleteSource').value.trim();
+        if (!source) return setStatus('deleteSourceStatus', '请输入 source', 'error');
+        if (!confirm(`确定删除来源「${source}」的全部切片？`)) return;
+
+        try {
+          const data = await apiJson(
+            'DELETE',
+            `/ai/knowledge/documents?source=${encodeURIComponent(source)}`,
+          );
+          setStatus('deleteSourceStatus', `已删除 ${data.deletedCount} 条切片`, 'ok');
+          document.getElementById('deleteSource').value = '';
+          loadDocList();
+        } catch (e) {
+          setStatus('deleteSourceStatus', e.message, 'error');
+        }
+      });
+
+      loadConfig();
+    </script>
+  </body>
+</html>

@@ -1,6 +1,9 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppLoggerService } from './common/logger/logger.service';
@@ -29,7 +32,9 @@ function resolveCorsOptions(configService: ConfigService) {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
   const logger = await app.resolve(AppLoggerService);
   logger.setContext('Bootstrap');
   app.useLogger(logger);
@@ -68,10 +73,20 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api', app, document);
 
+  const publicPath = [join(process.cwd(), 'public'), join(__dirname, 'public')].find(
+    (path) => existsSync(path),
+  );
+  if (publicPath) {
+    app.useStaticAssets(publicPath, { prefix: '/demo' });
+  }
+
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   logger.log(`Application is running on port ${port}`);
   logger.log(`Swagger docs: http://localhost:${port}/api`);
+  if (publicPath) {
+    logger.log(`Demo UI: http://localhost:${port}/demo/`);
+  }
   logger.log(`Prometheus metrics: http://localhost:${port}/metrics`);
 }
 void bootstrap();

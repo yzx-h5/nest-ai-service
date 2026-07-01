@@ -2,6 +2,7 @@ import { defineObjectSchema } from '../../common/validation/joi';
 
 interface QueryKnowledgeSchemaInput {
   question: string;
+  stream?: boolean;
 }
 
 export const queryKnowledgeSchema = defineObjectSchema((Joi) =>
@@ -12,5 +13,6 @@ export const queryKnowledgeSchema = defineObjectSchema((Joi) =>
       'string.min': 'question 不能为空',
       'string.max': 'question 长度不能超过 2000 个字符',
     }),
+    stream: Joi.boolean().default(false),
   }),
 );

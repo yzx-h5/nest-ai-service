@@ -3,6 +3,7 @@ import { defineObjectSchema } from '../../common/validation/joi';
 interface ChatSchemaInput {
   prompt: string;
   systemPrompt?: string;
+  stream?: boolean;
 }
 
 export const chatSchema = defineObjectSchema((Joi) =>
@@ -16,5 +17,6 @@ export const chatSchema = defineObjectSchema((Joi) =>
     systemPrompt: Joi.string().trim().max(5000).optional().messages({
       'string.max': 'systemPrompt 长度不能超过 5000 个字符',
     }),
+    stream: Joi.boolean().default(false),
   }),
 );

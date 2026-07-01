@@ -1,11 +1,14 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  AIMessageChunk,
   BaseMessage,
   HumanMessage,
   SystemMessage,
 } from '@langchain/core/messages';
 import { ChatOpenAI } from '@langchain/openai';
+import { rethrowAiProviderError } from '../common/ai/ai-provider-error';
+import { extractMessageChunkText } from '../common/ai/message-content.util';
 import { buildOpenAiClientConfig } from '../common/ai/llm-config';
 
 @Injectable()
@@ -29,19 +32,57 @@ export class LangchainService implements OnModuleInit {
   }
 
   async invoke(prompt: string, systemPrompt?: string): Promise<string> {
+    const messages = this.buildMessages(prompt, systemPrompt);
+
+    try {
+      const response = await this.model.invoke(messages);
+      const content = response.content;
+
+      if (typeof content === 'string') {
+        return content;
+      }
+
+      return JSON.stringify(content);
+    } catch (error) {
+      rethrowAiProviderError(error);
+    }
+  }
+
+  async *stream(
+    prompt: string,
+    systemPrompt?: string,
+  ): AsyncGenerator<string, string, void> {
+    const messages = this.buildMessages(prompt, systemPrompt);
+
+    try {
+      const stream = await this.model.stream(messages);
+      let answer = '';
+
+      for await (const chunk of stream) {
+        const text = extractMessageChunkText(
+          (chunk as AIMessageChunk).content,
+        );
+        if (text) {
+          answer += text;
+          yield text;
+        }
+      }
+
+      return answer;
+    } catch (error) {
+      rethrowAiProviderError(error);
+    }
+  }
+
+  private buildMessages(
+    prompt: string,
+    systemPrompt?: string,
+  ): BaseMessage[] {
     const messages: BaseMessage[] = [];
     if (systemPrompt) {
       messages.push(new SystemMessage(systemPrompt));
     }
     messages.push(new HumanMessage(prompt));
-
-    const response = await this.model.invoke(messages);
-    const content = response.content;
-
-    if (typeof content === 'string') {
-      return content;
-    }
-
-    return JSON.stringify(content);
+    return messages;
   }
 }

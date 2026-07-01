@@ -18,6 +18,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<{ url: string }>();
 
+    if (response.headersSent) {
+      return;
+    }
+
     if (SKIP_PATH_PREFIXES.some((prefix) => request.url.startsWith(prefix))) {
       if (exception instanceof HttpException) {
         response.status(exception.getStatus()).json(exception.getResponse());
@@ -48,6 +52,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
         status,
         code: httpStatusToResponseCode(status),
         message: this.extractMessage(exceptionResponse),
+      };
+    }
+
+    if (exception instanceof Error && exception.message) {
+      return {
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        code: ResponseCode.INTERNAL_ERROR,
+        message: exception.message,
       };
     }
 

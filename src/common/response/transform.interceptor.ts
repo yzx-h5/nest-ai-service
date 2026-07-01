@@ -5,6 +5,7 @@ import {
   NestInterceptor,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { Response } from 'express';
 import { Observable, map } from 'rxjs';
 import { isApiResponse, successResponse } from './api-response';
 import { SKIP_RESPONSE_TRANSFORM_KEY } from './skip-response-transform.decorator';
@@ -22,8 +23,10 @@ export class TransformInterceptor implements NestInterceptor {
     );
 
     const request = context.switchToHttp().getRequest<{ url: string }>();
+    const response = context.switchToHttp().getResponse<Response>();
     const shouldSkip =
       skipByDecorator ||
+      response.headersSent ||
       SKIP_PATH_PREFIXES.some((prefix) => request.url.startsWith(prefix));
 
     if (shouldSkip) {

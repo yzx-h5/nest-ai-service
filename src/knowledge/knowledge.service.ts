@@ -2,7 +2,7 @@ import { Document } from '@langchain/core/documents';
 import { QdrantVectorStore } from '@langchain/qdrant';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentParserService } from './document-parser.service';
 import { LangchainService } from '../langchain/langchain.service';
@@ -26,6 +26,29 @@ export interface QueryKnowledgeResult {
   answer: string;
   sources: KnowledgeSourceDto[];
 }
+
+export interface KnowledgeChunkItem {
+  id: string;
+  content: string;
+  source?: string;
+  fileType?: string;
+  importedAt?: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ListKnowledgeDocumentsResult {
+  items: KnowledgeChunkItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface DeleteKnowledgeDocumentsResult {
+  deletedCount: number;
+}
+
+type QdrantScrollOffset = string | number | Record<string, unknown>;
 
 @Injectable()
 export class KnowledgeService {
@@ -141,6 +164,55 @@ export class KnowledgeService {
   }
 
   async query(question: string): Promise<QueryKnowledgeResult> {
+    const { sources, systemPrompt } = await this.retrieveContext(question);
+    const answer = await this.langchainService.invoke(question, systemPrompt);
+    return { answer, sources };
+  }
+
+  async streamQuery(
+    question: string,
+    emit: (payload: unknown) => void,
+  ): Promise<void> {
+    emit({
+      type: 'step',
+      step: 'retrieving',
+      message: '正在检索知识库...',
+    });
+
+    const { sources, systemPrompt } = await this.retrieveContext(question);
+
+    emit({
+      type: 'step',
+      step: 'retrieved',
+      message: `知识检索完成，找到 ${sources.length} 条相关资料`,
+      data: { sources, count: sources.length },
+    });
+
+    emit({
+      type: 'step',
+      step: 'generating',
+      message: '正在生成回答...',
+    });
+
+    let answer = '';
+    for await (const token of this.langchainService.stream(
+      question,
+      systemPrompt,
+    )) {
+      answer += token;
+      emit({ type: 'token', content: token });
+    }
+
+    emit({
+      type: 'result',
+      data: { answer, sources },
+    });
+  }
+
+  private async retrieveContext(question: string): Promise<{
+    sources: KnowledgeSourceDto[];
+    systemPrompt: string;
+  }> {
     await this.ensureReady();
 
     const k = Number(
@@ -169,8 +241,176 @@ export class KnowledgeService {
       context,
     ].join('\n');
 
-    const answer = await this.langchainService.invoke(question, systemPrompt);
+    return { sources, systemPrompt };
+  }
 
-    return { answer, sources };
+  async listDocuments(options: {
+    page: number;
+    pageSize: number;
+    source?: string;
+  }): Promise<ListKnowledgeDocumentsResult> {
+    await this.ensureReady();
+
+    const qdrantUrl = this.configService.getOrThrow<string>('QDRANT_URL');
+    const filter = this.buildSourceFilter(options.source);
+    const { page, pageSize } = options;
+
+    try {
+      const countResult = await this.vectorStore.client.count(
+        this.vectorStore.collectionName,
+        {
+          filter,
+          exact: true,
+        },
+      );
+      const total = countResult.count;
+      const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+
+      if (total === 0 || page > totalPages) {
+        return { items: [], total, page, pageSize, totalPages };
+      }
+
+      let offset: QdrantScrollOffset | undefined;
+      let skip = (page - 1) * pageSize;
+
+      while (skip > 0) {
+        const batchSize = Math.min(skip, 100);
+        const skipped = await this.vectorStore.client.scroll(
+          this.vectorStore.collectionName,
+          {
+            filter,
+            limit: batchSize,
+            offset,
+            with_payload: ['content', 'metadata'],
+            with_vector: false,
+          },
+        );
+
+        if (skipped.points.length === 0) {
+          return { items: [], total, page, pageSize, totalPages };
+        }
+
+        offset = skipped.next_page_offset ?? undefined;
+        skip -= skipped.points.length;
+
+        if (offset === undefined) {
+          return { items: [], total, page, pageSize, totalPages };
+        }
+      }
+
+      const result = await this.vectorStore.client.scroll(
+        this.vectorStore.collectionName,
+        {
+          filter,
+          limit: pageSize,
+          offset,
+          with_payload: ['content', 'metadata'],
+          with_vector: false,
+        },
+      );
+
+      return {
+        items: result.points.map((point) => this.mapPointToChunkItem(point)),
+        total,
+        page,
+        pageSize,
+        totalPages,
+      };
+    } catch (error) {
+      this.wrapVectorStoreError(error, qdrantUrl);
+    }
+  }
+
+  async deleteDocumentById(id: string): Promise<DeleteKnowledgeDocumentsResult> {
+    await this.ensureReady();
+
+    const qdrantUrl = this.configService.getOrThrow<string>('QDRANT_URL');
+
+    try {
+      const existing = await this.vectorStore.client.retrieve(
+        this.vectorStore.collectionName,
+        {
+          ids: [id],
+          with_payload: false,
+          with_vector: false,
+        },
+      );
+
+      if (existing.length === 0) {
+        throw new NotFoundException(`未找到 id 为 ${id} 的知识库片段`);
+      }
+
+      await this.vectorStore.delete({ ids: [id] });
+      return { deletedCount: 1 };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.wrapVectorStoreError(error, qdrantUrl);
+    }
+  }
+
+  async deleteDocumentsBySource(
+    source: string,
+  ): Promise<DeleteKnowledgeDocumentsResult> {
+    await this.ensureReady();
+
+    const qdrantUrl = this.configService.getOrThrow<string>('QDRANT_URL');
+    const filter = this.buildSourceFilter(source)!;
+
+    try {
+      const countResult = await this.vectorStore.client.count(
+        this.vectorStore.collectionName,
+        {
+          filter,
+          exact: true,
+        },
+      );
+
+      if (countResult.count === 0) {
+        throw new NotFoundException(`未找到 source 为 ${source} 的知识库文档`);
+      }
+
+      await this.vectorStore.delete({ filter });
+      return { deletedCount: countResult.count };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.wrapVectorStoreError(error, qdrantUrl);
+    }
+  }
+
+  private buildSourceFilter(source?: string) {
+    if (!source) {
+      return undefined;
+    }
+
+    return {
+      must: [
+        {
+          key: 'metadata.source',
+          match: { value: source },
+        },
+      ],
+    };
+  }
+
+  private mapPointToChunkItem(point: {
+    id: string | number;
+    payload?: Record<string, unknown> | null;
+  }): KnowledgeChunkItem {
+    const metadata = (point.payload?.metadata ?? {}) as Record<string, unknown>;
+
+    return {
+      id: String(point.id),
+      content: String(point.payload?.content ?? ''),
+      source: typeof metadata.source === 'string' ? metadata.source : undefined,
+      fileType:
+        typeof metadata.fileType === 'string' ? metadata.fileType : undefined,
+      importedAt:
+        typeof metadata.importedAt === 'string' ? metadata.importedAt : undefined,
+      metadata,
+    };
   }
 }

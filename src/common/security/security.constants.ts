@@ -8,5 +8,6 @@ export const API_KEY_SECURITY_NAME = 'api-key';
  * 无需鉴权 / 限流的路径前缀：
  * - /metrics：Prometheus 抓取端点
  * - /api：Swagger 文档
+ * - /demo：API 调试页面
  */
-export const SECURITY_SKIP_PREFIXES = ['/metrics', '/api'];
+export const SECURITY_SKIP_PREFIXES = ['/metrics', '/api', '/demo'];

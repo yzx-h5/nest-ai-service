@@ -15,4 +15,11 @@ export class ChatDto {
     example: '你是一个简洁的技术助手',
   })
   systemPrompt?: string;
+
+  @ApiPropertyOptional({
+    description: '为 true 时使用 SSE 流式返回生成内容',
+    example: false,
+    default: false,
+  })
+  stream?: boolean;
 }

@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { JoiSchema } from '../../common/validation/joi-schema.decorator';
 import { queryKnowledgeSchema } from './query.schema';
 
@@ -9,4 +9,12 @@ export class QueryKnowledgeDto {
     example: 'NestJS 是什么？',
   })
   question: string;
+
+  @ApiPropertyOptional({
+    description:
+      '为 true 时使用 SSE 流式返回，并推送检索/生成等步骤进度',
+    example: false,
+    default: false,
+  })
+  stream?: boolean;
 }
