@@ -3,7 +3,7 @@ name: Build & Deploy
 on:
   push:
     branches:
-      - main  # 推送到 main 分支时自动触发
+      - master  # 推送到 master 分支时自动触发
 
 env:
   REGISTRY: crpi-y5t84v0baey92hyg.cn-shenzhen.personal.cr.aliyuncs.com  # 替换为你的阿里云地域

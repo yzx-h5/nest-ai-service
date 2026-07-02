@@ -1,7 +1,5 @@
 services:
   app:
-    # 替换为你的阿里云镜像地址，例如：
-    # registry.cn-hangzhou.aliyuncs.com/your-namespace/nest-ai-service:latest
     image: crpi-y5t84v0baey92hyg.cn-shenzhen.personal.cr.aliyuncs.com/nest-react/nest-ai-service:latest
     ports:
       - '3000:3000'
