@@ -11,8 +11,7 @@ export class QueryKnowledgeDto {
   question: string;
 
   @ApiPropertyOptional({
-    description:
-      '为 true 时使用 SSE 流式返回，并推送检索/生成等步骤进度',
+    description: '为 true 时使用 SSE 流式返回，并推送检索/生成等步骤进度',
     example: false,
     default: false,
   })

@@ -1,10 +1,14 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { JoiSchema } from '../../common/validation/joi-schema.decorator';
 import { listDocumentsSchema } from './list-documents.schema';
 
 @JoiSchema(listDocumentsSchema)
 export class ListDocumentsDto {
-  @ApiPropertyOptional({ description: '页码，从 1 开始', example: 1, default: 1 })
+  @ApiPropertyOptional({
+    description: '页码，从 1 开始',
+    example: 1,
+    default: 1,
+  })
   page: number;
 
   @ApiPropertyOptional({

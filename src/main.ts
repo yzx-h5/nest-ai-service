@@ -73,9 +73,10 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api', app, document);
 
-  const publicPath = [join(process.cwd(), 'public'), join(__dirname, 'public')].find(
-    (path) => existsSync(path),
-  );
+  const publicPath = [
+    join(process.cwd(), 'public'),
+    join(__dirname, 'public'),
+  ].find((path) => existsSync(path));
   if (publicPath) {
     app.useStaticAssets(publicPath, { prefix: '/demo' });
   }

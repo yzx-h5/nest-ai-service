@@ -1,7 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
-  AIMessageChunk,
   BaseMessage,
   HumanMessage,
   SystemMessage,
@@ -19,10 +18,7 @@ export class LangchainService implements OnModuleInit {
 
   onModuleInit() {
     this.model = new ChatOpenAI({
-      model: this.configService.get<string>(
-        'OPENAI_MODEL',
-        'deepseek-v4-flash',
-      ),
+      model: this.configService.get<string>('OPENAI_MODEL'),
       apiKey: this.configService.get<string>('OPENAI_API_KEY'),
       configuration: buildOpenAiClientConfig(this.configService, 'llm'),
       temperature: Number(
@@ -59,9 +55,7 @@ export class LangchainService implements OnModuleInit {
       let answer = '';
 
       for await (const chunk of stream) {
-        const text = extractMessageChunkText(
-          (chunk as AIMessageChunk).content,
-        );
+        const text = extractMessageChunkText(chunk.content);
         if (text) {
           answer += text;
           yield text;
@@ -74,10 +68,7 @@ export class LangchainService implements OnModuleInit {
     }
   }
 
-  private buildMessages(
-    prompt: string,
-    systemPrompt?: string,
-  ): BaseMessage[] {
+  private buildMessages(prompt: string, systemPrompt?: string): BaseMessage[] {
     const messages: BaseMessage[] = [];
     if (systemPrompt) {
       messages.push(new SystemMessage(systemPrompt));
