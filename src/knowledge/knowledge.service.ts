@@ -2,7 +2,12 @@ import { Document } from '@langchain/core/documents';
 import { QdrantVectorStore } from '@langchain/qdrant';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
-import { Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentParserService } from './document-parser.service';
 import { LangchainService } from '../langchain/langchain.service';
@@ -13,6 +18,8 @@ import {
 
 export interface ImportDocumentResult {
   chunksAdded: number;
+  chunksSkipped: number;
+  charsExtracted: number;
   source?: string;
 }
 
@@ -103,10 +110,10 @@ export class KnowledgeService {
 
     this.textSplitter = new RecursiveCharacterTextSplitter({
       chunkSize: Number(
-        this.configService.get<string>('KNOWLEDGE_CHUNK_SIZE', '1000'),
+        this.configService.get<string>('KNOWLEDGE_CHUNK_SIZE', '1500'),
       ),
       chunkOverlap: Number(
-        this.configService.get<string>('KNOWLEDGE_CHUNK_OVERLAP', '200'),
+        this.configService.get<string>('KNOWLEDGE_CHUNK_OVERLAP', '300'),
       ),
     });
 
@@ -140,13 +147,40 @@ export class KnowledgeService {
       },
     });
 
-    const chunks = await this.textSplitter.splitDocuments([document]);
+    const rawChunks = await this.textSplitter.splitDocuments([document]);
+    const chunks = rawChunks.filter((chunk) =>
+      this.isUsefulChunk(chunk.pageContent),
+    );
+    const chunksSkipped = rawChunks.length - chunks.length;
+
+    if (chunks.length === 0) {
+      throw new BadRequestException(
+        '文档切分后没有可用文本片段（可能全是页码/页眉页脚）',
+      );
+    }
+
     await this.vectorStore.addDocuments(chunks);
 
     return {
       chunksAdded: chunks.length,
+      chunksSkipped,
+      charsExtracted: text.length,
       source: typeof metadata.source === 'string' ? metadata.source : undefined,
     };
+  }
+
+  /** 过滤过短或仅含页码的无信息切片，避免污染检索。 */
+  private isUsefulChunk(content: string): boolean {
+    const trimmed = content.trim();
+    if (trimmed.length < 40) {
+      return false;
+    }
+    if (
+      /^(?:--\s*)?(?:Page\s+)?\d+\s*(?:of|\/)\s*\d+(?:\s*--)?$/i.test(trimmed)
+    ) {
+      return false;
+    }
+    return true;
   }
 
   async importFile(
@@ -216,32 +250,205 @@ export class KnowledgeService {
     await this.ensureReady();
 
     const k = Number(
-      this.configService.get<string>('KNOWLEDGE_RETRIEVAL_K', '4'),
+      this.configService.get<string>('KNOWLEDGE_RETRIEVAL_K', '8'),
     );
-    const results = await this.vectorStore.similaritySearchWithScore(
-      question,
-      k,
+    const fetchK = Number(
+      this.configService.get<string>('KNOWLEDGE_FETCH_K', '24'),
     );
 
-    const sources: KnowledgeSourceDto[] = results.map(([doc, score]) => ({
-      content: doc.pageContent,
-      score,
-      metadata: doc.metadata as Record<string, unknown>,
-    }));
+    const terms = this.extractSearchTerms(question);
+    const scoredPairs = await this.vectorStore.similaritySearchWithScore(
+      question,
+      Math.max(fetchK, k),
+    );
+
+    // 关键词加权：短缩写（如 APA）纯向量常排不上，命中原文时抬高分数
+    const questionLower = question.toLowerCase().trim();
+    const ranked = scoredPairs
+      .map(([doc, score]) => ({
+        content: doc.pageContent,
+        score: score + this.keywordBoost(doc.pageContent, terms, questionLower),
+        metadata: doc.metadata as Record<string, unknown>,
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    // 始终做关键词扫描并优先合并，避免“allocation”泛匹配挤掉 “APA Allocation”
+    const keywordHits =
+      terms.length > 0
+        ? await this.findChunksByKeywords(terms, questionLower, k)
+        : [];
+    const sources =
+      keywordHits.length > 0
+        ? this.mergeSources(keywordHits, ranked, k)
+        : ranked.slice(0, k);
 
     const context = sources
       .map((source, index) => `[${index + 1}] ${source.content}`)
       .join('\n\n');
 
     const systemPrompt = [
-      '你是一个知识库助手。请基于以下检索到的资料回答问题。',
-      '如果资料中没有相关信息，请明确说明无法从知识库中找到答案。',
-      '回答时尽量引用资料编号。',
+      '你是一个知识库助手。请严格基于以下检索到的资料回答问题。',
+      '回答要求：',
+      '1. 综合利用全部相关资料，不要只依赖某一条；不同资料中的信息应合并去重后完整给出。',
+      '2. 当用户要求“全部 / 详细 / 列出 / 完整”等信息时，尽量穷尽资料中出现的字段与取值，按条目清晰列出，不要概括省略。',
+      '3. 若多条资料互相补充，请一并整理；若互相冲突，请注明差异并引用资料编号。',
+      '4. 回答中引用资料编号（如 [1]、[2]）。资料中没有的信息不要编造；若确实找不到，请明确说明。',
+      '5. 注意缩写与全称可能同时出现（例如 APA = Automatic Premium Allocation），只要资料中语义相关就应一并整理。',
       '',
+      '检索资料：',
       context,
     ].join('\n');
 
     return { sources, systemPrompt };
+  }
+
+  /** 从问题中提取检索关键词（英文词、数字、中文片段）。 */
+  private extractSearchTerms(question: string): string[] {
+    const stop = new Set([
+      'a',
+      'an',
+      'the',
+      'is',
+      'are',
+      'was',
+      'were',
+      'of',
+      'in',
+      'on',
+      'for',
+      'to',
+      'and',
+      'or',
+      'what',
+      'how',
+      'who',
+      'where',
+      'when',
+      'which',
+      'with',
+      'from',
+      'about',
+      'please',
+      '的',
+      '是',
+      '什么',
+      '怎么',
+      '如何',
+      '多少',
+      '一下',
+      '告诉',
+      '给我',
+      '列出',
+      '详细',
+      '全部',
+      '信息',
+    ]);
+
+    const raw = question
+      .toLowerCase()
+      .match(/[a-z][a-z0-9]{1,}|[\u4e00-\u9fff]{2,}/g);
+
+    if (!raw) {
+      return [];
+    }
+
+    return [...new Set(raw.filter((term) => !stop.has(term)))];
+  }
+
+  private keywordBoost(
+    content: string,
+    terms: string[],
+    questionLower: string,
+  ): number {
+    if (terms.length === 0) {
+      return 0;
+    }
+
+    const lower = content.toLowerCase();
+    let boost = 0;
+
+    if (questionLower.length >= 3 && lower.includes(questionLower)) {
+      boost += 1.2;
+    }
+
+    const hitCount = terms.filter((term) => lower.includes(term)).length;
+    if (hitCount > 0) {
+      boost += 0.25 * hitCount;
+    }
+
+    // 短缩写（≤4）命中时额外加权，避免被长词泛匹配淹没
+    for (const term of terms) {
+      if (term.length <= 4 && lower.includes(term)) {
+        boost += 0.6;
+      }
+    }
+
+    return boost;
+  }
+
+  private async findChunksByKeywords(
+    terms: string[],
+    questionLower: string,
+    limit: number,
+  ): Promise<KnowledgeSourceDto[]> {
+    const matched: KnowledgeSourceDto[] = [];
+    let offset: QdrantScrollOffset | undefined;
+
+    while (matched.length < limit * 5) {
+      const result = await this.vectorStore.client.scroll(
+        this.vectorStore.collectionName,
+        {
+          limit: 100,
+          offset,
+          with_payload: true,
+          with_vector: false,
+        },
+      );
+
+      for (const point of result.points) {
+        const content = this.payloadContentAsString(point.payload?.content);
+        const boost = this.keywordBoost(content, terms, questionLower);
+        if (boost <= 0) {
+          continue;
+        }
+
+        matched.push({
+          content,
+          score: 1 + boost,
+          metadata: (point.payload?.metadata ?? {}) as Record<string, unknown>,
+        });
+      }
+
+      offset =
+        (result.next_page_offset as QdrantScrollOffset | null) ?? undefined;
+      if (offset === undefined) {
+        break;
+      }
+    }
+
+    return matched.sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+
+  private mergeSources(
+    primary: KnowledgeSourceDto[],
+    secondary: KnowledgeSourceDto[],
+    limit: number,
+  ): KnowledgeSourceDto[] {
+    const seen = new Set<string>();
+    const merged: KnowledgeSourceDto[] = [];
+
+    for (const source of [...primary, ...secondary]) {
+      if (seen.has(source.content)) {
+        continue;
+      }
+      seen.add(source.content);
+      merged.push(source);
+      if (merged.length >= limit) {
+        break;
+      }
+    }
+
+    return merged;
   }
 
   async listDocuments(options: {
@@ -321,7 +528,9 @@ export class KnowledgeService {
     }
   }
 
-  async deleteDocumentById(id: string): Promise<DeleteKnowledgeDocumentsResult> {
+  async deleteDocumentById(
+    id: string,
+  ): Promise<DeleteKnowledgeDocumentsResult> {
     await this.ensureReady();
 
     const qdrantUrl = this.configService.getOrThrow<string>('QDRANT_URL');
@@ -396,6 +605,10 @@ export class KnowledgeService {
     };
   }
 
+  private payloadContentAsString(content: unknown): string {
+    return typeof content === 'string' ? content : '';
+  }
+
   private mapPointToChunkItem(point: {
     id: string | number;
     payload?: Record<string, unknown> | null;
@@ -404,12 +617,14 @@ export class KnowledgeService {
 
     return {
       id: String(point.id),
-      content: String(point.payload?.content ?? ''),
+      content: this.payloadContentAsString(point.payload?.content),
       source: typeof metadata.source === 'string' ? metadata.source : undefined,
       fileType:
         typeof metadata.fileType === 'string' ? metadata.fileType : undefined,
       importedAt:
-        typeof metadata.importedAt === 'string' ? metadata.importedAt : undefined,
+        typeof metadata.importedAt === 'string'
+          ? metadata.importedAt
+          : undefined,
       metadata,
     };
   }

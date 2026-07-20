@@ -33,4 +33,22 @@ describe('DocumentParserService', () => {
       service.parse(Buffer.from('data'), 'archive.zip'),
     ).rejects.toThrow('支持 .txt、.md、.pdf、.docx、.xlsx、.xls 格式');
   });
+
+  it('should strip page markers and repeated footers', () => {
+    const pages = Array.from({ length: 6 }, (_, i) =>
+      [
+        `Section content on page ${i + 1}`,
+        'Celebrate living TM',
+        'fwdprivate.com',
+        `-- ${i + 1} of 6 --`,
+      ].join('\n'),
+    ).join('\n\n');
+
+    const normalized = service.normalizeExtractedText(pages);
+
+    expect(normalized).toContain('Section content on page 1');
+    expect(normalized).not.toContain('Celebrate living TM');
+    expect(normalized).not.toContain('fwdprivate.com');
+    expect(normalized).not.toMatch(/--\s*\d+\s*of\s*\d+\s*--/);
+  });
 });

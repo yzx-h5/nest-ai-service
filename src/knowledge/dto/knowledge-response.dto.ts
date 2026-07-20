@@ -4,6 +4,18 @@ export class ImportDocumentResponseDto {
   @ApiProperty({ description: '写入向量库的文本块数量', example: 3 })
   chunksAdded: number;
 
+  @ApiProperty({
+    description: '因过短/页码等被跳过的切片数量',
+    example: 2,
+  })
+  chunksSkipped: number;
+
+  @ApiProperty({
+    description: '解析后写入切分前的字符数（可用于核对是否抽全）',
+    example: 12000,
+  })
+  charsExtracted: number;
+
   @ApiPropertyOptional({
     description: '文档来源标识',
     example: 'nestjs-intro.txt',

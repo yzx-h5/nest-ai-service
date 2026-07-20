@@ -70,12 +70,52 @@ export class DocumentParserService {
         throw new BadRequestException(this.getSupportedFormatsMessage());
     }
 
-    const normalized = text.split('\0').join('').trim();
+    const normalized = this.normalizeExtractedText(text);
     if (!normalized) {
       throw new BadRequestException('未能从文件中提取到有效文本');
     }
 
     return normalized;
+  }
+
+  /**
+   * 清洗抽取文本：去空字符、页码行、跨页重复页眉页脚，减少无意义切片。
+   */
+  normalizeExtractedText(text: string): string {
+    const cleaned = text.split('\0').join('').replace(/\r\n/g, '\n');
+    const withoutPageMarkers = cleaned.replace(
+      /^[ \t]*(?:--\s*)?(?:Page\s+)?\d+\s*(?:of|\/)\s*\d+(?:\s*--)?[ \t]*$/gim,
+      '',
+    );
+
+    const lines = withoutPageMarkers.split('\n');
+    const shortLineCounts = new Map<string, number>();
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.length > 0 && trimmed.length <= 120) {
+        shortLineCounts.set(
+          trimmed,
+          (shortLineCounts.get(trimmed) ?? 0) + 1,
+        );
+      }
+    }
+
+    // 短行重复出现多次，通常是页眉/页脚/水印
+    const boilerplate = new Set(
+      [...shortLineCounts.entries()]
+        .filter(([, count]) => count >= 5)
+        .map(([line]) => line),
+    );
+
+    const filtered = lines.filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return true;
+      }
+      return !boilerplate.has(trimmed);
+    });
+
+    return filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 
   private parsePlainText(buffer: Buffer): string {
