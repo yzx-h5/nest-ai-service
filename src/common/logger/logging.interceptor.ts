@@ -5,11 +5,15 @@ import {
   NestInterceptor,
 } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
+import { RequestContextService } from '../request/request-context.service';
 import { AppLoggerService } from './logger.service';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
-  constructor(private readonly logger: AppLoggerService) {
+  constructor(
+    private readonly logger: AppLoggerService,
+    private readonly requestContext: RequestContextService,
+  ) {
     this.logger.setContext('HTTP');
   }
 
@@ -17,9 +21,9 @@ export class LoggingInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest<{
       method: string;
       url: string;
-      ip?: string;
+      route?: { path: string };
     }>();
-    const { method, url, ip } = request;
+    const { method } = request;
     const startedAt = Date.now();
 
     return next.handle().pipe(
@@ -29,17 +33,38 @@ export class LoggingInterceptor implements NestInterceptor {
             .switchToHttp()
             .getResponse<{ statusCode: number }>();
           const duration = Date.now() - startedAt;
-          this.logger.log(
-            `${method} ${url} ${response.statusCode} ${duration}ms${ip ? ` ${ip}` : ''}`,
+          this.logRequest(
+            'http_request_completed',
+            method,
+            request,
+            response.statusCode,
+            duration,
           );
         },
-        error: (error: Error) => {
-          const duration = Date.now() - startedAt;
-          this.logger.error(
-            `${method} ${url} failed ${duration}ms${ip ? ` ${ip}` : ''}`,
-            error.stack,
-          );
-        },
+      }),
+    );
+  }
+
+  private logRequest(
+    event: 'http_request_completed',
+    method: string,
+    request: { url: string; route?: { path: string } },
+    status: number,
+    durationMs: number,
+  ): void {
+    const path = request.route?.path ?? request.url.split('?')[0];
+    if (path === '/metrics') {
+      return;
+    }
+
+    this.logger.log(
+      JSON.stringify({
+        event,
+        requestId: this.requestContext.getRequestId(),
+        method,
+        path,
+        status,
+        durationMs,
       }),
     );
   }

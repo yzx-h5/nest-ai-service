@@ -4,6 +4,7 @@ export interface ApiResponse<T = unknown> {
   code: ResponseCode;
   message: string;
   data: T | null;
+  requestId?: string;
 }
 
 export function successResponse<T>(
@@ -20,11 +21,13 @@ export function successResponse<T>(
 export function errorResponse(
   code: ResponseCode,
   message = RESPONSE_MESSAGES[code],
+  requestId?: string,
 ): ApiResponse<null> {
   return {
     code,
     message,
     data: null,
+    ...(requestId ? { requestId } : {}),
   };
 }
 

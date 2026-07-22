@@ -1,4 +1,9 @@
-import { ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import {
+  ExecutionContext,
+  HttpException,
+  Injectable,
+  NestInterceptor,
+} from '@nestjs/common';
 import { CallHandler } from '@nestjs/common/interfaces';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Counter, Histogram } from 'prom-client';
@@ -41,15 +46,20 @@ export class HttpMetricsInterceptor implements NestInterceptor {
           this.requestsTotal.inc({ method, route, status });
           endTimer({ status });
         },
-        error: () => {
-          const status = String(
-            context.switchToHttp().getResponse<{ statusCode: number }>()
-              .statusCode || 500,
-          );
+        error: (error: unknown) => {
+          const status = String(this.getErrorStatus(error));
           this.requestsTotal.inc({ method, route, status });
           endTimer({ status });
         },
       }),
     );
+  }
+
+  private getErrorStatus(error: unknown): number {
+    if (error instanceof HttpException) {
+      return error.getStatus();
+    }
+
+    return 500;
   }
 }

@@ -24,6 +24,19 @@ describe('AppController (e2e)', () => {
     });
   });
 
+  it('/health/live (GET) returns a request correlation id', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/health/live')
+      .expect(200);
+
+    expect(response.headers['x-request-id']).toEqual(expect.any(String));
+    expect(response.body).toMatchObject({
+      code: 0,
+      message: 'success',
+      data: { status: 'ok' },
+    });
+  });
+
   afterEach(async () => {
     await app.close();
   });

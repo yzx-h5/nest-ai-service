@@ -3,6 +3,7 @@ import {
   ApiExtraModels,
   ApiOkResponse,
   ApiProperty,
+  ApiPropertyOptional,
   getSchemaPath,
 } from '@nestjs/swagger';
 
@@ -15,6 +16,9 @@ export class ApiResponseDto<T = unknown> {
 
   @ApiProperty({ description: '响应数据' })
   data: T;
+
+  @ApiPropertyOptional({ description: '请求关联 ID，仅错误响应返回' })
+  requestId?: string;
 }
 
 export function ApiOkResponseWrapped<T>(

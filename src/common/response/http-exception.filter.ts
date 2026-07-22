@@ -6,17 +6,30 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { AppLoggerService } from '../logger/logger.service';
+import { RequestContextService } from '../request/request-context.service';
 import { errorResponse } from './api-response';
-import { ResponseCode, httpStatusToResponseCode } from './response-code.enum';
+import {
+  RESPONSE_MESSAGES,
+  ResponseCode,
+  httpStatusToResponseCode,
+} from './response-code.enum';
 
 const SKIP_PATH_PREFIXES = ['/metrics', '/api'];
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  constructor(
+    private readonly logger: AppLoggerService,
+    private readonly requestContext: RequestContextService,
+  ) {
+    this.logger.setContext(HttpExceptionFilter.name);
+  }
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<{ url: string }>();
+    const request = ctx.getRequest<{ method: string; url: string }>();
 
     if (response.headersSent) {
       return;
@@ -36,7 +49,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     const { status, code, message } = this.resolveException(exception);
-    response.status(status).json(errorResponse(code, message));
+    const requestId = this.requestContext.getRequestId();
+    this.logger.error(
+      JSON.stringify({
+        event: 'http_request_failed',
+        requestId,
+        method: request.method,
+        path: request.url.split('?')[0],
+        status,
+        code,
+        error: exception instanceof Error ? exception.name : 'UnknownError',
+      }),
+      exception instanceof Error ? exception.stack : undefined,
+    );
+    response.status(status).json(errorResponse(code, message, requestId));
   }
 
   private resolveException(exception: unknown): {
@@ -48,18 +74,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
 
+      const code = httpStatusToResponseCode(status);
       return {
         status,
-        code: httpStatusToResponseCode(status),
-        message: this.extractMessage(exceptionResponse),
-      };
-    }
-
-    if (exception instanceof Error && exception.message) {
-      return {
-        status: HttpStatus.INTERNAL_SERVER_ERROR,
-        code: ResponseCode.INTERNAL_ERROR,
-        message: exception.message,
+        code,
+        message:
+          status >= Number(HttpStatus.INTERNAL_SERVER_ERROR)
+            ? RESPONSE_MESSAGES[code]
+            : this.extractMessage(exceptionResponse),
       };
     }
 

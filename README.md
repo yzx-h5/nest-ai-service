@@ -1,98 +1,62 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Nest AI Service
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+面向生产环境的 NestJS AI 与知识库服务。提供 LLM 对话、文件导入、Qdrant 向量检索、流式响应，以及统一响应、鉴权、限流、结构化日志、Prometheus 指标和容器健康检查。
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## 快速开始
 
 ```bash
-$ pnpm install
+pnpm install
+cp .env.example .env
+pnpm start:dev
 ```
 
-## Compile and run the project
+本地 API 文档默认位于 `http://localhost:3000/api`，指标端点为 `http://localhost:3000/metrics`。
+
+## 质量门禁
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test --runInBand
+pnpm test:e2e --runInBand
+pnpm test:ci
 ```
 
-## Run tests
+`lint` 只检查，不会修改工作区；需要格式化修复时使用 `pnpm format` 或 `pnpm lint:fix`。
+
+## 生产部署
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+docker compose up -d --build
 ```
 
-## Deployment
+生产环境在启动期校验以下条件：
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+- 必须启用 API Key 鉴权，并配置 `API_KEYS`。
+- 若启用 CORS，`CORS_ORIGIN` 必须是明确的来源白名单，不能使用 `*`。
+- 必须提供 Qdrant、LLM 和 Embedding 的必要连接配置。
+- Grafana 管理员账号和密码必须通过环境变量设置，禁止默认凭证。
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+容器以非 root 用户运行。机密值应通过 CI/CD 的 Secret 或密钥管理系统注入，不应提交到仓库。
 
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
-```
+## 运维端点
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+| 端点 | 说明 |
+| --- | --- |
+| `GET /health/live` | 进程存活探针，不访问外部依赖 |
+| `GET /health/ready` | 就绪探针，检查 Qdrant 是否可用 |
+| `GET /metrics` | Prometheus 指标 |
+| `GET /api` | Swagger，仅在 `SWAGGER_ENABLED=true` 时启用 |
 
-## Resources
+所有 HTTP 响应会回传 `x-request-id`。异常响应中同时包含 `requestId`，可与 JSON 结构化访问日志关联排障；日志不会记录查询参数、请求体或 API Key。
 
-Check out a few resources that may come in handy when working with NestJS:
+## 安全与扩展
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+- API Key 使用常量时间比较，支持多个 Key 以便轮换。
+- 限流、CORS、请求体上限和可信代理均由环境变量控制。
+- 当前限流存储为进程内存，单实例适用；水平扩容时应替换为 Redis 等共享 Throttler storage。
+- Qdrant 在 Compose 中仅绑定到本机回环地址。生产环境应将 `/metrics` 放在内网、服务网格或反向代理访问控制之后。
+- 业务模块保持 controller / DTO / service 边界；跨领域能力统一放在 `src/common`，方便替换鉴权、日志和指标实现。
 
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Grafana 与 Prometheus 的预置配置位于 `monitoring/`。仪表盘包含请求速率、延迟分位数、状态码和进程资源使用情况。

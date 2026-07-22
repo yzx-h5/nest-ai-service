@@ -93,10 +93,7 @@ export class DocumentParserService {
     for (const line of lines) {
       const trimmed = line.trim();
       if (trimmed.length > 0 && trimmed.length <= 120) {
-        shortLineCounts.set(
-          trimmed,
-          (shortLineCounts.get(trimmed) ?? 0) + 1,
-        );
+        shortLineCounts.set(trimmed, (shortLineCounts.get(trimmed) ?? 0) + 1);
       }
     }
 
@@ -115,7 +112,10 @@ export class DocumentParserService {
       return !boilerplate.has(trimmed);
     });
 
-    return filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    return filtered
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   private parsePlainText(buffer: Buffer): string {

@@ -98,23 +98,29 @@ export class KnowledgeService {
 
   private async initialize(): Promise<void> {
     const qdrantUrl = this.configService.getOrThrow<string>('QDRANT_URL');
+    const chunkSize = this.getPositiveIntegerConfig(
+      'KNOWLEDGE_CHUNK_SIZE',
+      1500,
+    );
+    const chunkOverlap = this.getNonNegativeIntegerConfig(
+      'KNOWLEDGE_CHUNK_OVERLAP',
+      300,
+    );
+
+    if (chunkOverlap >= chunkSize) {
+      throw new Error('KNOWLEDGE_CHUNK_OVERLAP 必须小于 KNOWLEDGE_CHUNK_SIZE');
+    }
 
     const embeddings = new OpenAIEmbeddings({
       model: this.configService.getOrThrow<string>('OPENAI_EMBEDDING_MODEL'),
       apiKey: getEmbeddingApiKey(this.configService),
       configuration: buildOpenAiClientConfig(this.configService, 'embedding'),
-      batchSize: Number(
-        this.configService.get<string>('EMBEDDING_BATCH_SIZE', '25'),
-      ),
+      batchSize: this.getPositiveIntegerConfig('EMBEDDING_BATCH_SIZE', 25),
     });
 
     this.textSplitter = new RecursiveCharacterTextSplitter({
-      chunkSize: Number(
-        this.configService.get<string>('KNOWLEDGE_CHUNK_SIZE', '1500'),
-      ),
-      chunkOverlap: Number(
-        this.configService.get<string>('KNOWLEDGE_CHUNK_OVERLAP', '300'),
-      ),
+      chunkSize,
+      chunkOverlap,
     });
 
     this.vectorStore = new QdrantVectorStore(embeddings, {
@@ -133,11 +139,56 @@ export class KnowledgeService {
     }
   }
 
+  private getPositiveIntegerConfig(key: string, fallback: number): number {
+    return this.getIntegerConfig(key, fallback, 1);
+  }
+
+  private getNonNegativeIntegerConfig(key: string, fallback: number): number {
+    return this.getIntegerConfig(key, fallback, 0);
+  }
+
+  private getIntegerConfig(
+    key: string,
+    fallback: number,
+    minimum: number,
+  ): number {
+    const rawValue = this.configService.get<string | number>(key);
+    if (
+      rawValue === undefined ||
+      (typeof rawValue === 'string' && rawValue.trim() === '')
+    ) {
+      return fallback;
+    }
+
+    const value = Number(rawValue);
+    if (!Number.isInteger(value) || value < minimum) {
+      throw new Error(`${key} 必须是大于等于 ${minimum} 的整数`);
+    }
+
+    return value;
+  }
+
+  private async runVectorStoreOperation<T>(
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const qdrantUrl = this.configService.getOrThrow<string>('QDRANT_URL');
+
+    try {
+      return await operation();
+    } catch (error) {
+      this.wrapVectorStoreError(error, qdrantUrl);
+    }
+  }
+
   async importText(
     text: string,
     metadata: Record<string, unknown> = {},
   ): Promise<ImportDocumentResult> {
     await this.ensureReady();
+
+    if (!text.trim()) {
+      throw new BadRequestException('导入文本不能为空');
+    }
 
     const document = new Document({
       pageContent: text,
@@ -159,7 +210,9 @@ export class KnowledgeService {
       );
     }
 
-    await this.vectorStore.addDocuments(chunks);
+    await this.runVectorStoreOperation(() =>
+      this.vectorStore.addDocuments(chunks),
+    );
 
     return {
       chunksAdded: chunks.length,
@@ -249,38 +302,26 @@ export class KnowledgeService {
   }> {
     await this.ensureReady();
 
-    const k = Number(
-      this.configService.get<string>('KNOWLEDGE_RETRIEVAL_K', '8'),
-    );
-    const fetchK = Number(
-      this.configService.get<string>('KNOWLEDGE_FETCH_K', '24'),
-    );
+    const k = this.getPositiveIntegerConfig('KNOWLEDGE_RETRIEVAL_K', 8);
+    const fetchK = this.getPositiveIntegerConfig('KNOWLEDGE_FETCH_K', 24);
 
     const terms = this.extractSearchTerms(question);
-    const scoredPairs = await this.vectorStore.similaritySearchWithScore(
-      question,
-      Math.max(fetchK, k),
+    const scoredPairs = await this.runVectorStoreOperation(() =>
+      this.vectorStore.similaritySearchWithScore(question, Math.max(fetchK, k)),
     );
 
-    // 关键词加权：短缩写（如 APA）纯向量常排不上，命中原文时抬高分数
+    // 在向量检索的候选集内重排，避免每次提问都线性扫描整个 collection。
     const questionLower = question.toLowerCase().trim();
-    const ranked = scoredPairs
-      .map(([doc, score]) => ({
-        content: doc.pageContent,
-        score: score + this.keywordBoost(doc.pageContent, terms, questionLower),
-        metadata: doc.metadata as Record<string, unknown>,
-      }))
-      .sort((a, b) => b.score - a.score);
-
-    // 始终做关键词扫描并优先合并，避免“allocation”泛匹配挤掉 “APA Allocation”
-    const keywordHits =
-      terms.length > 0
-        ? await this.findChunksByKeywords(terms, questionLower, k)
-        : [];
-    const sources =
-      keywordHits.length > 0
-        ? this.mergeSources(keywordHits, ranked, k)
-        : ranked.slice(0, k);
+    const sources = this.deduplicateSources(
+      scoredPairs
+        .map(([doc, score]) => ({
+          content: doc.pageContent,
+          score:
+            score + this.keywordBoost(doc.pageContent, terms, questionLower),
+          metadata: doc.metadata as Record<string, unknown>,
+        }))
+        .sort((a, b) => b.score - a.score),
+    ).slice(0, k);
 
     const context = sources
       .map((source, index) => `[${index + 1}] ${source.content}`)
@@ -371,14 +412,16 @@ export class KnowledgeService {
       boost += 1.2;
     }
 
-    const hitCount = terms.filter((term) => lower.includes(term)).length;
+    const hitCount = terms.filter((term) =>
+      this.matchesKeyword(lower, term),
+    ).length;
     if (hitCount > 0) {
       boost += 0.25 * hitCount;
     }
 
     // 短缩写（≤4）命中时额外加权，避免被长词泛匹配淹没
     for (const term of terms) {
-      if (term.length <= 4 && lower.includes(term)) {
+      if (term.length <= 4 && this.matchesKeyword(lower, term)) {
         boost += 0.6;
       }
     }
@@ -386,69 +429,29 @@ export class KnowledgeService {
     return boost;
   }
 
-  private async findChunksByKeywords(
-    terms: string[],
-    questionLower: string,
-    limit: number,
-  ): Promise<KnowledgeSourceDto[]> {
-    const matched: KnowledgeSourceDto[] = [];
-    let offset: QdrantScrollOffset | undefined;
-
-    while (matched.length < limit * 5) {
-      const result = await this.vectorStore.client.scroll(
-        this.vectorStore.collectionName,
-        {
-          limit: 100,
-          offset,
-          with_payload: true,
-          with_vector: false,
-        },
-      );
-
-      for (const point of result.points) {
-        const content = this.payloadContentAsString(point.payload?.content);
-        const boost = this.keywordBoost(content, terms, questionLower);
-        if (boost <= 0) {
-          continue;
-        }
-
-        matched.push({
-          content,
-          score: 1 + boost,
-          metadata: (point.payload?.metadata ?? {}) as Record<string, unknown>,
-        });
-      }
-
-      offset =
-        (result.next_page_offset as QdrantScrollOffset | null) ?? undefined;
-      if (offset === undefined) {
-        break;
-      }
+  private matchesKeyword(content: string, term: string): boolean {
+    if (!/^[a-z0-9]+$/.test(term)) {
+      return content.includes(term);
     }
 
-    return matched.sort((a, b) => b.score - a.score).slice(0, limit);
+    return new RegExp(`(^|[^a-z0-9])${term}(?=$|[^a-z0-9])`).test(content);
   }
 
-  private mergeSources(
-    primary: KnowledgeSourceDto[],
-    secondary: KnowledgeSourceDto[],
-    limit: number,
+  private deduplicateSources(
+    sources: KnowledgeSourceDto[],
   ): KnowledgeSourceDto[] {
     const seen = new Set<string>();
-    const merged: KnowledgeSourceDto[] = [];
+    const uniqueSources: KnowledgeSourceDto[] = [];
 
-    for (const source of [...primary, ...secondary]) {
+    for (const source of sources) {
       if (seen.has(source.content)) {
         continue;
       }
       seen.add(source.content);
-      merged.push(source);
-      if (merged.length >= limit) {
-        break;
-      }
+      uniqueSources.push(source);
     }
 
-    return merged;
+    return uniqueSources;
   }
 
   async listDocuments(options: {

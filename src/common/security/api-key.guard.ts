@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { AppLoggerService } from '../logger/logger.service';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { API_KEY_HEADER, SECURITY_SKIP_PREFIXES } from './security.constants';
@@ -21,7 +22,7 @@ import { API_KEY_HEADER, SECURITY_SKIP_PREFIXES } from './security.constants';
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
   private readonly enabled: boolean;
-  private readonly apiKeys: Set<string>;
+  private readonly apiKeys: string[];
 
   constructor(
     private readonly reflector: Reflector,
@@ -34,7 +35,7 @@ export class ApiKeyGuard implements CanActivate {
     );
     this.enabled = this.resolveEnabled();
 
-    if (this.enabled && this.apiKeys.size === 0) {
+    if (this.enabled && this.apiKeys.length === 0) {
       this.logger.warn(
         'API Key 鉴权已启用，但未配置任何 API_KEYS，所有受保护的请求都会被拒绝。',
       );
@@ -60,7 +61,7 @@ export class ApiKeyGuard implements CanActivate {
     if (!providedKey) {
       throw new UnauthorizedException('缺少 API Key');
     }
-    if (!this.apiKeys.has(providedKey)) {
+    if (!this.isValidApiKey(providedKey)) {
       throw new UnauthorizedException('无效的 API Key');
     }
 
@@ -86,25 +87,44 @@ export class ApiKeyGuard implements CanActivate {
     return raw?.trim() || undefined;
   }
 
-  private parseApiKeys(value: string | undefined): Set<string> {
+  private parseApiKeys(value: string | undefined): string[] {
     if (!value) {
-      return new Set<string>();
+      return [];
     }
 
-    return new Set(
-      value
-        .split(',')
-        .map((key) => key.trim())
-        .filter((key) => key.length > 0),
-    );
+    return [
+      ...new Set(
+        value
+          .split(',')
+          .map((key) => key.trim())
+          .filter((key) => key.length > 0),
+      ),
+    ];
+  }
+
+  private isValidApiKey(providedKey: string): boolean {
+    if (providedKey.length > 512) {
+      return false;
+    }
+
+    const candidate = Buffer.from(providedKey);
+    return this.apiKeys.some((apiKey) => {
+      const configuredKey = Buffer.from(apiKey);
+      return (
+        candidate.length === configuredKey.length &&
+        timingSafeEqual(candidate, configuredKey)
+      );
+    });
   }
 
   private resolveEnabled(): boolean {
-    const flag = this.configService.get<string>('API_KEY_AUTH_ENABLED');
+    const flag = this.configService.get<boolean | string>(
+      'API_KEY_AUTH_ENABLED',
+    );
     if (flag === undefined || flag === '') {
       // 未显式配置时，按是否提供了 API_KEYS 自动决定，避免本地开发被意外拦截。
-      return this.apiKeys.size > 0;
+      return this.apiKeys.length > 0;
     }
-    return flag === 'true' || flag === '1';
+    return flag === true || flag === 'true' || flag === '1';
   }
 }
