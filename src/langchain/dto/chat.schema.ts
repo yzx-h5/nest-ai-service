@@ -1,10 +1,5 @@
 import { defineObjectSchema } from '../../common/validation/joi';
-
-interface ChatSchemaInput {
-  prompt: string;
-  systemPrompt?: string;
-  stream?: boolean;
-}
+import type { ChatSchemaInput } from '../../interfaces/langchain/chat.interface';
 
 export const chatSchema = defineObjectSchema((Joi) =>
   Joi.object<ChatSchemaInput>({

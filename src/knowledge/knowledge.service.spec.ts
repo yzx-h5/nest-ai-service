@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
+import type { KnowledgeSourceDto } from '../interfaces/knowledge/knowledge.interface';
 import { DocumentParserService } from './document-parser.service';
-import { KnowledgeService, KnowledgeSourceDto } from './knowledge.service';
+import { KnowledgeService } from './knowledge.service';
 import { LangchainService } from '../langchain/langchain.service';
 
 type KnowledgeServiceInternals = {

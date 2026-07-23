@@ -1,9 +1,5 @@
 import { defineObjectSchema } from '../../common/validation/joi';
-
-interface ImportTextSchemaInput {
-  text: string;
-  source?: string;
-}
+import type { ImportTextSchemaInput } from '../../interfaces/knowledge/knowledge-dto.interface';
 
 export const importTextSchema = defineObjectSchema((Joi) =>
   Joi.object<ImportTextSchemaInput>({

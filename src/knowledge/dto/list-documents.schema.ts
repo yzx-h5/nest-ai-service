@@ -1,10 +1,5 @@
 import { defineObjectSchema } from '../../common/validation/joi';
-
-interface ListDocumentsSchemaInput {
-  page: number;
-  pageSize: number;
-  source?: string;
-}
+import type { ListDocumentsSchemaInput } from '../../interfaces/knowledge/knowledge-dto.interface';
 
 export const listDocumentsSchema = defineObjectSchema((Joi) =>
   Joi.object<ListDocumentsSchemaInput>({

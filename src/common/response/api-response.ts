@@ -1,11 +1,5 @@
 import { ResponseCode, RESPONSE_MESSAGES } from './response-code.enum';
-
-export interface ApiResponse<T = unknown> {
-  code: ResponseCode;
-  message: string;
-  data: T | null;
-  requestId?: string;
-}
+import type { ApiResponse } from '../../interfaces/common/response.interface';
 
 export function successResponse<T>(
   data: T,

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import mammoth from 'mammoth';
 import { PDFParse } from 'pdf-parse';
 import * as XLSX from 'xlsx';
+import type { SupportedDocumentExtension } from '../interfaces/knowledge/document-parser.interface';
 
 export const SUPPORTED_DOCUMENT_EXTENSIONS = [
   '.txt',
@@ -12,9 +13,6 @@ export const SUPPORTED_DOCUMENT_EXTENSIONS = [
   '.xlsx',
   '.xls',
 ] as const;
-
-export type SupportedDocumentExtension =
-  (typeof SUPPORTED_DOCUMENT_EXTENSIONS)[number];
 
 @Injectable()
 export class DocumentParserService {

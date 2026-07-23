@@ -1,10 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
-export interface ReadinessResult {
-  status: 'ok';
-  checks: { qdrant: 'up' | 'not_configured' };
-}
+import type { ReadinessResult } from '../interfaces/health/readiness.interface';
 
 @Injectable()
 export class HealthService {

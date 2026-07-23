@@ -1,10 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-
-interface OpenAiClientConfig {
-  baseURL?: string;
-  apiKey?: string;
-  defaultHeaders?: Record<string, string>;
-}
+import type { OpenAiClientConfig } from '../../interfaces/common/ai.interface';
 
 function normalizeEmbeddingBaseUrl(
   baseUrl: string | undefined,

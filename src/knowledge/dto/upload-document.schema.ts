@@ -1,19 +1,13 @@
 import path from 'node:path';
 import { defineObjectSchema } from '../../common/validation/joi';
-import {
-  SUPPORTED_DOCUMENT_EXTENSIONS,
-  type SupportedDocumentExtension,
-} from '../document-parser.service';
+import type { SupportedDocumentExtension } from '../../interfaces/knowledge/document-parser.interface';
+import type { UploadDocumentSchemaInput } from '../../interfaces/knowledge/knowledge-dto.interface';
+import { SUPPORTED_DOCUMENT_EXTENSIONS } from '../document-parser.service';
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 export const SUPPORTED_FORMATS_MESSAGE =
   '支持 .txt、.md、.pdf、.docx、.xlsx、.xls 格式';
-
-interface UploadDocumentSchemaInput {
-  buffer: Buffer;
-  originalname: string;
-}
 
 function getExtension(filename: string): string {
   const dotIndex = filename.lastIndexOf('.');

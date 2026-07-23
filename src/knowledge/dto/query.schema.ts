@@ -1,9 +1,5 @@
 import { defineObjectSchema } from '../../common/validation/joi';
-
-interface QueryKnowledgeSchemaInput {
-  question: string;
-  stream?: boolean;
-}
+import type { QueryKnowledgeSchemaInput } from '../../interfaces/knowledge/knowledge-dto.interface';
 
 export const queryKnowledgeSchema = defineObjectSchema((Joi) =>
   Joi.object<QueryKnowledgeSchemaInput>({

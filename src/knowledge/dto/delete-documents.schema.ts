@@ -1,8 +1,8 @@
 import { defineObjectSchema } from '../../common/validation/joi';
-
-interface DeleteDocumentsBySourceSchemaInput {
-  source: string;
-}
+import type {
+  DeleteDocumentParamSchemaInput,
+  DeleteDocumentsBySourceSchemaInput,
+} from '../../interfaces/knowledge/knowledge-dto.interface';
 
 export const deleteDocumentsBySourceSchema = defineObjectSchema((Joi) =>
   Joi.object<DeleteDocumentsBySourceSchemaInput>({
@@ -14,10 +14,6 @@ export const deleteDocumentsBySourceSchema = defineObjectSchema((Joi) =>
     }),
   }),
 );
-
-interface DeleteDocumentParamSchemaInput {
-  id: string;
-}
 
 export const deleteDocumentParamSchema = defineObjectSchema((Joi) =>
   Joi.object<DeleteDocumentParamSchemaInput>({
