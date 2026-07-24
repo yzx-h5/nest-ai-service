@@ -27,6 +27,7 @@ import {
   DeleteDocumentsBySourceDto,
 } from './dto/delete-documents.dto';
 import { ImportTextDto } from './dto/import-text.dto';
+import { ImportWebPageDto } from './dto/import-web-page.dto';
 import {
   DeleteKnowledgeDocumentsResponseDto,
   ImportDocumentResponseDto,
@@ -55,6 +56,19 @@ export class KnowledgeController {
     return this.knowledgeService.importText(body.text, {
       source: body.source,
     });
+  }
+
+  @Post('documents/url')
+  @ApiOperation({
+    summary: '提取网页正文并导入知识库',
+    description:
+      '仅支持公开的 HTTP(S) 网页；服务会提取网页正文、标题并写入知识库。',
+  })
+  @ApiOkResponseWrapped(ImportDocumentResponseDto, '网页导入成功')
+  async importWebPage(
+    @Body() body: ImportWebPageDto,
+  ): Promise<ImportDocumentResponseDto> {
+    return this.knowledgeService.importWebPage(body.url);
   }
 
   @Post('documents/upload')

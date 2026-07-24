@@ -486,6 +486,22 @@
             </div>
 
             <div class="card">
+              <h2>导入网页 · POST /ai/knowledge/documents/url</h2>
+              <label for="webPageUrl">网页地址</label>
+              <div class="row">
+                <input
+                  id="webPageUrl"
+                  type="url"
+                  placeholder="https://example.com/article"
+                  style="flex: 1"
+                />
+                <button type="button" id="webPageImportBtn">提取并导入</button>
+              </div>
+              <div class="hint">仅支持公开的 HTTP(S) 网页；动态渲染、登录或反爬页面可能无法完整提取。</div>
+              <div class="status" id="webPageImportStatus"></div>
+            </div>
+
+            <div class="card">
               <h2>文档列表 · GET /ai/knowledge/documents</h2>
               <div class="row">
                 <div style="flex: 1; min-width: 160px">
@@ -919,6 +935,40 @@
           loadDocList();
         } catch (e) {
           setStatus('importStatus', e.message, 'error');
+        }
+      });
+
+      // Import web page
+      document.getElementById('webPageImportBtn').addEventListener('click', async () => {
+        const url = document.getElementById('webPageUrl').value.trim();
+        if (!url) return setStatus('webPageImportStatus', '请输入网页地址', 'error');
+
+        try {
+          const parsedUrl = new URL(url);
+          if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+            throw new Error('仅支持 http 或 https 网页地址');
+          }
+        } catch (e) {
+          return setStatus('webPageImportStatus', e.message || '网页地址格式无效', 'error');
+        }
+
+        const button = document.getElementById('webPageImportBtn');
+        setStatus('webPageImportStatus', '正在提取并导入网页...');
+        button.disabled = true;
+        try {
+          const data = await apiJson('POST', '/ai/knowledge/documents/url', { url });
+          setStatus(
+            'webPageImportStatus',
+            `导入成功：${data.chunksAdded} 个切片（跳过 ${data.chunksSkipped ?? 0}）· 抽取 ${data.charsExtracted ?? '-'} 字 · source: ${data.source || '-'}`,
+            'ok',
+          );
+          document.getElementById('webPageUrl').value = '';
+          listPage = 1;
+          loadDocList();
+        } catch (e) {
+          setStatus('webPageImportStatus', e.message, 'error');
+        } finally {
+          button.disabled = false;
         }
       });
 

@@ -11,6 +11,7 @@ export interface EnvironmentVariables extends Record<string, unknown> {
   BODY_SIZE_LIMIT: string;
   TRUST_PROXY: boolean;
   SWAGGER_ENABLED?: boolean;
+  KNOWLEDGE_WEB_ALLOW_PRIVATE_NETWORK: boolean;
   QDRANT_URL?: string;
   QDRANT_COLLECTION?: string;
   OPENAI_BASE_URL?: string;

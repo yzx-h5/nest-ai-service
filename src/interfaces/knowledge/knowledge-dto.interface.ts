@@ -8,6 +8,10 @@ export interface ImportTextSchemaInput {
   source?: string;
 }
 
+export interface ImportWebPageSchemaInput {
+  url: string;
+}
+
 export interface QueryKnowledgeSchemaInput {
   question: string;
   stream?: boolean;

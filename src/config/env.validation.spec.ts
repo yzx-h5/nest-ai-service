@@ -14,6 +14,12 @@ describe('validateEnvironment', () => {
     expect(config.PORT).toBe(3100);
   });
 
+  it('defaults private web page access to disabled', () => {
+    const config = validateEnvironment({});
+
+    expect(config.KNOWLEDGE_WEB_ALLOW_PRIVATE_NETWORK).toBe(false);
+  });
+
   it('rejects an incomplete production configuration', () => {
     expect(() =>
       validateEnvironment({

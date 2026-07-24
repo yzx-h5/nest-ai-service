@@ -2,8 +2,11 @@ import { Document } from '@langchain/core/documents';
 import { QdrantVectorStore } from '@langchain/qdrant';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -27,6 +30,10 @@ import {
 
 @Injectable()
 export class KnowledgeService {
+  private static readonly WEB_PAGE_MAX_BYTES = 5 * 1024 * 1024;
+  private static readonly WEB_PAGE_MAX_REDIRECTS = 5;
+  private static readonly WEB_PAGE_TIMEOUT_MS = 15_000;
+
   private vectorStore: QdrantVectorStore;
   private textSplitter: RecursiveCharacterTextSplitter;
   private initPromise: Promise<void> | null = null;
@@ -167,8 +174,9 @@ export class KnowledgeService {
     });
 
     const rawChunks = await this.textSplitter.splitDocuments([document]);
+    const minimumChunkLength = Math.min(40, text.trim().length);
     const chunks = rawChunks.filter((chunk) =>
-      this.isUsefulChunk(chunk.pageContent),
+      this.isUsefulChunk(chunk.pageContent, minimumChunkLength),
     );
     const chunksSkipped = rawChunks.length - chunks.length;
 
@@ -191,9 +199,9 @@ export class KnowledgeService {
   }
 
   /** 过滤过短或仅含页码的无信息切片，避免污染检索。 */
-  private isUsefulChunk(content: string): boolean {
+  private isUsefulChunk(content: string, minimumLength = 40): boolean {
     const trimmed = content.trim();
-    if (trimmed.length < 40) {
+    if (trimmed.length < minimumLength) {
       return false;
     }
     if (
@@ -216,6 +224,272 @@ export class KnowledgeService {
       source: filename,
       fileType: extension.slice(1),
     });
+  }
+
+  async importWebPage(url: string): Promise<ImportDocumentResult> {
+    const { content, finalUrl, title, contentType } =
+      await this.fetchWebPageContent(url);
+
+    return this.importText(content, {
+      source: finalUrl,
+      url: finalUrl,
+      title,
+      contentType,
+    });
+  }
+
+  private async fetchWebPageContent(url: string): Promise<{
+    content: string;
+    finalUrl: string;
+    title?: string;
+    contentType: string;
+  }> {
+    let currentUrl: URL;
+    try {
+      currentUrl = new URL(url);
+    } catch {
+      throw new BadRequestException('url 格式无效');
+    }
+
+    try {
+      for (
+        let redirectCount = 0;
+        redirectCount <= KnowledgeService.WEB_PAGE_MAX_REDIRECTS;
+        redirectCount += 1
+      ) {
+        await this.assertSafeWebUrl(currentUrl);
+        const response = await fetch(currentUrl, {
+          headers: {
+            Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9',
+            'User-Agent': 'Nest-AI-Knowledge-Importer/1.0',
+          },
+          redirect: 'manual',
+          signal: AbortSignal.timeout(KnowledgeService.WEB_PAGE_TIMEOUT_MS),
+        });
+
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location');
+          if (!location) {
+            throw new BadRequestException('网页重定向缺少目标地址');
+          }
+          if (redirectCount === KnowledgeService.WEB_PAGE_MAX_REDIRECTS) {
+            throw new BadRequestException('网页重定向次数超过限制');
+          }
+          currentUrl = new URL(location, currentUrl);
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new BadRequestException(
+            `网页请求失败，目标服务器返回 HTTP ${response.status}`,
+          );
+        }
+
+        const contentType = response.headers.get('content-type') ?? '';
+        if (!this.isSupportedWebPageContentType(contentType)) {
+          throw new BadRequestException(
+            '网页内容类型不受支持，仅支持 HTML 或纯文本网页',
+          );
+        }
+
+        const contentLength = Number(response.headers.get('content-length'));
+        if (
+          Number.isFinite(contentLength) &&
+          contentLength > KnowledgeService.WEB_PAGE_MAX_BYTES
+        ) {
+          throw new BadRequestException('网页内容超过 5MB 限制');
+        }
+
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength > KnowledgeService.WEB_PAGE_MAX_BYTES) {
+          throw new BadRequestException('网页内容超过 5MB 限制');
+        }
+
+        const rawContent = this.decodeWebPageContent(bytes, contentType);
+        const { content, title } = this.extractWebPageText(
+          rawContent,
+          contentType,
+        );
+        if (!content) {
+          throw new BadRequestException('未能从网页中提取到可导入的正文内容');
+        }
+
+        return {
+          content,
+          finalUrl: currentUrl.href,
+          title,
+          contentType: contentType.split(';', 1)[0].toLowerCase(),
+        };
+      }
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `网页抓取失败：${error instanceof Error ? error.message : '未知错误'}`,
+      );
+    }
+
+    throw new BadRequestException('网页重定向次数超过限制');
+  }
+
+  private async assertSafeWebUrl(url: URL): Promise<void> {
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new BadRequestException('仅支持 http 或 https 网页地址');
+    }
+    if (url.username || url.password) {
+      throw new BadRequestException('网页地址不能包含用户名或密码');
+    }
+
+    const allowPrivateNetwork = this.configService.get<boolean>(
+      'KNOWLEDGE_WEB_ALLOW_PRIVATE_NETWORK',
+      false,
+    );
+    if (!allowPrivateNetwork) {
+      const hostname = url.hostname.toLowerCase();
+      if (
+        hostname === 'localhost' ||
+        hostname.endsWith('.localhost') ||
+        hostname.endsWith('.local')
+      ) {
+        throw new BadRequestException('不允许访问本地或内网网页地址');
+      }
+
+      const addresses = await lookup(hostname, { all: true, verbatim: true });
+      if (
+        addresses.length === 0 ||
+        addresses.some(({ address }) => !this.isPublicIpAddress(address))
+      ) {
+        throw new BadRequestException('不允许访问本地或内网网页地址');
+      }
+    }
+  }
+
+  private isPublicIpAddress(address: string): boolean {
+    const version = isIP(address);
+    if (version === 4) {
+      const [first, second] = address.split('.').map(Number);
+      return !(
+        first === 0 ||
+        first === 10 ||
+        first === 127 ||
+        first >= 224 ||
+        (first === 100 && second >= 64 && second <= 127) ||
+        (first === 169 && second === 254) ||
+        (first === 172 && second >= 16 && second <= 31) ||
+        (first === 192 && second === 168) ||
+        (first === 198 && (second === 18 || second === 19))
+      );
+    }
+
+    if (version === 6) {
+      const normalized = address.toLowerCase();
+      return !(
+        normalized === '::' ||
+        normalized === '::1' ||
+        normalized.startsWith('fc') ||
+        normalized.startsWith('fd') ||
+        normalized.startsWith('fe8') ||
+        normalized.startsWith('fe9') ||
+        normalized.startsWith('fea') ||
+        normalized.startsWith('feb') ||
+        normalized.startsWith('::ffff:127.') ||
+        normalized.startsWith('::ffff:10.') ||
+        normalized.startsWith('::ffff:169.254.') ||
+        normalized.startsWith('::ffff:172.16.') ||
+        normalized.startsWith('::ffff:192.168.')
+      );
+    }
+
+    return false;
+  }
+
+  private isSupportedWebPageContentType(contentType: string): boolean {
+    const mimeType = contentType.split(';', 1)[0].trim().toLowerCase();
+    return (
+      mimeType === 'text/html' ||
+      mimeType === 'application/xhtml+xml' ||
+      mimeType === 'text/plain'
+    );
+  }
+
+  private decodeWebPageContent(bytes: Uint8Array, contentType: string): string {
+    const charset = /charset=([^;\s]+)/i.exec(contentType)?.[1] ?? 'utf-8';
+    try {
+      return new TextDecoder(charset).decode(bytes);
+    } catch {
+      return new TextDecoder().decode(bytes);
+    }
+  }
+
+  private extractWebPageText(
+    rawContent: string,
+    contentType: string,
+  ): { content: string; title?: string } {
+    if (contentType.split(';', 1)[0].trim().toLowerCase() === 'text/plain') {
+      return { content: this.normalizeWebPageText(rawContent) };
+    }
+
+    const title = this.normalizeWebPageText(
+      /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(rawContent)?.[1] ?? '',
+    );
+    const content = this.normalizeWebPageText(
+      rawContent
+        .replace(/<!--[\s\S]*?-->/g, ' ')
+        .replace(
+          /<(script|style|noscript|svg|template|iframe)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,
+          ' ',
+        )
+        .replace(
+          /<\/?(article|main|section|div|p|h[1-6]|li|br|tr|blockquote|pre)\b[^>]*>/gi,
+          '\n',
+        )
+        .replace(/<[^>]+>/g, ' '),
+    );
+
+    return { content, title: title || undefined };
+  }
+
+  private normalizeWebPageText(content: string): string {
+    const normalized = this.decodeHtmlEntities(content)
+      .replace(/\u00a0/g, ' ')
+      .replace(/[ \t]{2,}/g, ' ');
+
+    return normalized
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  private decodeHtmlEntities(content: string): string {
+    const entities: Record<string, string> = {
+      amp: '&',
+      apos: "'",
+      gt: '>',
+      lt: '<',
+      nbsp: ' ',
+      quot: '"',
+    };
+    return content.replace(
+      /&(#x[\da-f]+|#\d+|[a-z]+);/gi,
+      (entity: string, value: string): string => {
+        const normalized = value.toLowerCase();
+        let codePoint: number | undefined;
+        if (normalized.startsWith('#x')) {
+          codePoint = Number.parseInt(normalized.slice(2), 16);
+        }
+        if (normalized.startsWith('#')) {
+          codePoint = Number.parseInt(normalized.slice(1), 10);
+        }
+        if (codePoint !== undefined) {
+          return codePoint <= 0x10ffff
+            ? String.fromCodePoint(codePoint)
+            : entity;
+        }
+        return entities[normalized] ?? entity;
+      },
+    );
   }
 
   async query(question: string): Promise<QueryKnowledgeResult> {

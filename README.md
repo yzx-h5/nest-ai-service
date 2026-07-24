@@ -2,6 +2,20 @@
 
 面向生产环境的 NestJS AI 与知识库服务。提供 LLM 对话、文件导入、Qdrant 向量检索、流式响应，以及统一响应、鉴权、限流、结构化日志、Prometheus 指标和容器健康检查。
 
+## 知识库网页导入
+
+调用 `POST /ai/knowledge/documents/url` 可将公开网页提取为正文并导入知识库：
+
+```json
+{
+  "url": "https://docs.nestjs.com/controllers"
+}
+```
+
+接口默认仅允许 HTTP(S) 公开地址，会拦截 `localhost`、内网 IP 和超出限制的重定向；单页最大 5MB，抓取超时为 15 秒。页面会去除脚本、样式等非正文内容，并将网页标题和最终 URL 作为片段元数据写入向量库。
+
+若服务部署在受控内网且需要导入本机、Docker 或企业内网页面，可设置 `KNOWLEDGE_WEB_ALLOW_PRIVATE_NETWORK=true`。该配置会降低 SSRF 防护强度，生产环境应仅在确认调用方可信时启用。
+
 ## 快速开始
 
 ```bash
@@ -42,12 +56,12 @@ docker compose up -d --build
 
 ## 运维端点
 
-| 端点 | 说明 |
-| --- | --- |
-| `GET /health/live` | 进程存活探针，不访问外部依赖 |
-| `GET /health/ready` | 就绪探针，检查 Qdrant 是否可用 |
-| `GET /metrics` | Prometheus 指标 |
-| `GET /api` | Swagger，仅在 `SWAGGER_ENABLED=true` 时启用 |
+| 端点                | 说明                                        |
+| ------------------- | ------------------------------------------- |
+| `GET /health/live`  | 进程存活探针，不访问外部依赖                |
+| `GET /health/ready` | 就绪探针，检查 Qdrant 是否可用              |
+| `GET /metrics`      | Prometheus 指标                             |
+| `GET /api`          | Swagger，仅在 `SWAGGER_ENABLED=true` 时启用 |
 
 所有 HTTP 响应会回传 `x-request-id`。异常响应中同时包含 `requestId`，可与 JSON 结构化访问日志关联排障；日志不会记录查询参数、请求体或 API Key。
 

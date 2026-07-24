@@ -22,6 +22,7 @@ const environmentSchema = Joi.object<EnvironmentVariables>({
     .default('1mb'),
   TRUST_PROXY: booleanSchema.default(false),
   SWAGGER_ENABLED: booleanSchema.optional(),
+  KNOWLEDGE_WEB_ALLOW_PRIVATE_NETWORK: booleanSchema.default(false),
   QDRANT_URL: Joi.string()
     .uri({ scheme: ['http', 'https'] })
     .optional(),
